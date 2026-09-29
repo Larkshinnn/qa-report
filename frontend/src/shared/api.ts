@@ -13,10 +13,15 @@ const apiBase = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
 async function response(path: string, options: RequestInit = {}): Promise<Response> {
   let result: Response
   try {
+    const headers = new Headers(options.headers)
+    if (!(options.body instanceof FormData) && !headers.has('Content-Type')) {
+      headers.set('Content-Type', 'application/json')
+    }
+    if (!headers.has('X-QA-Request')) headers.set('X-QA-Request', '1')
     result = await fetch(`${apiBase}${path}`, {
       ...options,
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json', 'X-QA-Request': '1', ...options.headers },
+      headers,
     })
   } catch {
     throw new ApiError('Server tidak terjangkau. Periksa koneksi dan coba kembali.', 0)

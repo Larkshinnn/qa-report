@@ -3,7 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useToast } from '../../../shared/composables/useToast'
 import DeleteReportButton from '../components/DeleteReportButton.vue'
-import { errorMessage } from '../../../shared/api'
+import { downloadFile, errorMessage } from '../../../shared/api'
 import { qaApi, statusLabel, type ReportPage, type ReportSummary } from '../api'
 import UiButton from '../../../shared/components/ui/UiButton.vue'
 import UiBreadcrumbs from '../../../shared/components/ui/UiBreadcrumbs.vue'
@@ -11,6 +11,7 @@ import UiCard from '../../../shared/components/ui/UiCard.vue'
 import UiInput from '../../../shared/components/ui/UiInput.vue'
 import UiBadge from '../../../shared/components/ui/UiBadge.vue'
 import UiDataTable from '../../../shared/components/ui/UiDataTable.vue'
+import UiErrorState from '../../../shared/components/ui/UiErrorState.vue'
 import '../styles.css'
 const router = useRouter()
 const { notify } = useToast()
@@ -20,6 +21,9 @@ const data = ref<ReportPage>({ reports: [], total: 0, page: 1, page_size: 20 })
 const loading = ref(false)
 const error = ref('')
 const page = ref(1)
+const backupBusy = ref(false)
+const backupError = ref('')
+const importFile = ref<HTMLInputElement>()
 const pages = computed(() => Math.max(1, Math.ceil(data.value.total / 20)))
 const columns: { key: keyof ReportSummary; label: string }[] = [
   { key: 'report_date', label: 'Tanggal' },
@@ -69,6 +73,40 @@ function deleted(): void {
   notify('Laporan dihapus permanen.')
   void load()
 }
+async function downloadBackup(): Promise<void> {
+  backupBusy.value = true
+  backupError.value = ''
+  try {
+    downloadFile(await qaApi.backup(), `qa-reports-backup-${new Date().toISOString().slice(0, 10)}.json`)
+    notify('Backup QA Report berhasil diunduh.')
+  } catch (cause) {
+    backupError.value = errorMessage(cause)
+  } finally {
+    backupBusy.value = false
+  }
+}
+async function importBackup(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  if (file.size > 10 * 1024 * 1024) {
+    backupError.value = 'File backup maksimal 10 MB.'
+    return
+  }
+  if (!window.confirm(`Import backup "${file.name}"? Laporan dan template yang sudah ada akan dilewati.`)) return
+  backupBusy.value = true
+  backupError.value = ''
+  try {
+    const result = await qaApi.restore(await file.text())
+    notify(`${result.restored} laporan dipulihkan; ${result.skipped} data yang sudah ada dilewati.`)
+    await load()
+  } catch (cause) {
+    backupError.value = errorMessage(cause)
+  } finally {
+    backupBusy.value = false
+  }
+}
 onMounted(load)
 </script>
 <template>
@@ -78,8 +116,14 @@ onMounted(load)
       <h1>QA Reports</h1>
       <p>Daftar berdasarkan tanggal laporan, dari terbaru ke terlama.</p>
     </div>
-    <UiButton @click="router.push('/qa-reports/new')">Tambah laporan</UiButton>
+    <div class="qa-actions">
+      <UiButton variant="secondary" :loading="backupBusy" @click="downloadBackup">Unduh backup</UiButton>
+      <UiButton variant="secondary" :loading="backupBusy" @click="importFile?.click()">Import backup</UiButton>
+      <input ref="importFile" class="visually-hidden" type="file" accept="application/json,.json" @change="importBackup" />
+      <UiButton @click="router.push('/qa-reports/new')">Tambah laporan</UiButton>
+    </div>
   </div>
+  <UiErrorState v-if="backupError" :message="backupError" />
   <nav
     class="qa-nav"
     aria-label="Navigasi laporan"
@@ -225,3 +269,6 @@ onMounted(load)
     </section>
   </div>
 </template>
+<style scoped>
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+</style>

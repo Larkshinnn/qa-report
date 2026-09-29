@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 
 from app.core.auth import OwnedDb, require_user
 from app.modules.qa_reports import backup, delivery, service
+from app.modules.qa_reports.workspace import workspace_summary
 from app.modules.qa_reports.schemas import (
     CsvPreviewRow,
     DeliveryOptions,
@@ -76,6 +77,11 @@ async def monthly(
     db: OwnedDb, month: Annotated[str, Query(pattern=r"^\d{4}-\d{2}$")]
 ) -> MonthlyMetrics:
     return await service.monthly_metrics(db, month)
+
+
+@router.get("/workspace")
+async def shared_workspace(db: OwnedDb, month: Annotated[str, Query(pattern=r"^\d{4}-\d{2}$")]):
+    return await workspace_summary(db, month)
 
 
 @router.get("/monthly.csv")

@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     google_client_secret: SecretStr = SecretStr("")
     google_redirect_uri: str = "http://localhost:8000/api/auth/google/callback"
     google_allowed_emails: str = ""
+    youtube_admin_email: str = ""
+    youtube_redirect_uri: str = ""
     session_cookie_name: str = "qa_report_session"
     slack_webhook_url: SecretStr = SecretStr("")
     smtp_host: str = ""

@@ -32,11 +32,11 @@ function selected(path: string): boolean {
       </span>
       <span class="brand-copy">
         QA Report
-        <small>PRIVATE WORKSPACE</small>
+        <small>QA WORKSPACE</small>
       </span>
     </RouterLink>
     <div class="sidebar-content">
-      <p class="nav-label">INDEX / WORKSPACE</p>
+      <p class="nav-label">INDEX / QA WORKSPACE</p>
       <nav aria-label="Navigasi utama">
         <RouterLink
           v-for="item in primaryNavigation"
@@ -84,8 +84,8 @@ function selected(path: string): boolean {
         aria-hidden="true"
       />
       <div class="footer-copy">
-        <strong>Account scoped</strong>
-        <small>Data terpisah per akun</small>
+          <strong>Shared workspace</strong>
+          <small>Ringkasan tim · data personal terjaga</small>
       </div>
       <UiButton
         v-if="!mobile"

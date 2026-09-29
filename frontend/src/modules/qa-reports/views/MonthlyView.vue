@@ -168,6 +168,24 @@ onMounted(load)
         <dd>{{ data.repeated_entries }}</dd>
       </div>
     </dl>
+    <UiCard padding="md" class="hours-card">
+      <div class="section-heading">
+        <div>
+          <h2>Target jam kerja</h2>
+          <p>{{ data.total_hours.toFixed(1) }} dari {{ data.hours_target }} jam minimum bulan ini</p>
+        </div>
+        <strong :class="data.hours_target_met ? 'target-met' : 'target-pending'">
+          {{ data.hours_target_met ? 'Target tercapai' : `${Math.max(0, data.hours_target - data.total_hours).toFixed(1)} jam lagi` }}
+        </strong>
+      </div>
+      <meter
+        class="hours-meter"
+        :value="data.total_hours"
+        :max="data.hours_target"
+        min="0"
+        :aria-label="`${data.total_hours} dari ${data.hours_target} jam`"
+      />
+    </UiCard>
     <p class="small muted">
       Pass rate = hasil Pass ÷ aktivitas dengan Result terisi. Result yang tidak dipakai template
       tidak dihitung. Tiket yang diuji ulang pada tanggal sama tetap dihitung sebagai entri
@@ -298,6 +316,10 @@ onMounted(load)
   border-block: 1px solid var(--color-border);
   gap: 24px;
 }
+.hours-card { margin-bottom: 4px; }
+.hours-meter { display: block; width: 100%; height: 18px; margin-top: 16px; accent-color: var(--color-primary); }
+.target-met { color: var(--color-success, var(--color-primary)); }
+.target-pending { color: var(--color-text-muted); }
 dt {
   font-size: 14px;
   color: var(--color-text-muted);

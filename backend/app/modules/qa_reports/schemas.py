@@ -199,9 +199,30 @@ class MonthlyMetrics(Schema):
     pass_rate: float
     issue_count: int
     repeated_entries: int
+    total_hours: float
+    hours_target: int = 160
+    hours_target_met: bool
     environments: list[CountGroup]
     results: list[CountGroup]
     trend: list[DayCount]
+
+
+class WorkspaceUserSummary(Schema):
+    account_id: UUID
+    display_name: str
+    email: str
+    report_dates: list[date]
+    report_count: int
+    activity_count: int
+    total_hours: float
+    pass_rate: float
+    issue_count: int
+
+
+class WorkspaceSummary(Schema):
+    month: str
+    hours_target: int = 160
+    users: list[WorkspaceUserSummary]
 
 
 class CsvPreviewRow(Schema):

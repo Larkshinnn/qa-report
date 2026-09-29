@@ -74,6 +74,9 @@ export interface Metrics {
   pass_rate: number
   issue_count: number
   repeated_entries: number
+  total_hours: number
+  hours_target: number
+  hours_target_met: boolean
   environments: { label: string; count: number }[]
   results: { label: string; count: number }[]
   trend: { date: string; count: number }[]

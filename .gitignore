@@ -26,3 +26,5 @@ docs/
 Thumbs.db
 .idea/
 .vscode/
+
+client_secret*

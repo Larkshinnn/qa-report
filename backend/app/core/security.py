@@ -1,5 +1,7 @@
+import base64
 import hashlib
 
+from cryptography.fernet import Fernet
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from app.core.config import get_settings
@@ -16,6 +18,20 @@ def signer() -> URLSafeTimedSerializer:
 
 def token_digest(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+def encrypt_secret(value: str) -> str:
+    key = base64.urlsafe_b64encode(
+        hashlib.sha256(get_settings().app_secret_key.get_secret_value().encode()).digest()
+    )
+    return Fernet(key).encrypt(value.encode()).decode()
+
+
+def decrypt_secret(value: str) -> str:
+    key = base64.urlsafe_b64encode(
+        hashlib.sha256(get_settings().app_secret_key.get_secret_value().encode()).digest()
+    )
+    return Fernet(key).decrypt(value.encode()).decode()
 
 
 def read_cookie(cookie: str | None) -> str | None:

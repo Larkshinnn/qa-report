@@ -1,5 +1,7 @@
 import {
   PhClipboardText,
+  PhUsersThree,
+  PhYoutubeLogo,
 } from '@phosphor-icons/vue'
 import type { Component } from 'vue'
 
@@ -10,6 +12,18 @@ export const primaryNavigation: NavigationItem[] = [
     path: '/qa-reports',
     icon: PhClipboardText,
     keywords: 'laporan testing harian',
+  },
+  {
+    label: 'Workspace',
+    path: '/workspace',
+    icon: PhUsersThree,
+    keywords: 'tim user pengguna jam laporan bersama',
+  },
+  {
+    label: 'YouTube',
+    path: '/youtube',
+    icon: PhYoutubeLogo,
+    keywords: 'video upload konten channel',
   },
 ]
 export const secondaryNavigation: NavigationItem[] = []

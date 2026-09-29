@@ -7,6 +7,16 @@ export const router = createRouter({
     { path: '/', redirect: '/qa-reports' },
     ...qaReportRoutes,
     {
+      path: '/workspace',
+      component: () => import('../modules/workspace/WorkspaceView.vue'),
+      meta: { title: 'Workspace bersama' },
+    },
+    {
+      path: '/youtube',
+      component: () => import('../modules/youtube/YouTubeView.vue'),
+      meta: { title: 'YouTube bersama' },
+    },
+    {
       path: '/:pathMatch(.*)*',
       component: () => import('../shared/views/NotFoundView.vue'),
       meta: { title: 'Halaman tidak ditemukan' },

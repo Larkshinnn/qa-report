@@ -20,7 +20,5 @@ Google OAuth requires a Google Cloud OAuth Web Application client. Register the 
 
 ## Deployment
 
-Deploy `backend/` to Railway and `frontend/` to Vercel. The complete workflow,
-environment variables, health check, and smoke test are in
-`docs/DEPLOYMENT.md`. Google OAuth is configured only after both deployments
-are healthy.
+Deploy `backend/` to Railway and `frontend/` to Vercel using the folders as
+each platform's project root. Configure YouTube using [YOUTUBE_SETUP.md](YOUTUBE_SETUP.md).

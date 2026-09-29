@@ -35,3 +35,17 @@ class Session(Base):
         ForeignKey("accounts.id", ondelete="CASCADE"), index=True
     )
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
+class YouTubeConnection(Base):
+    __tablename__ = "youtube_connections"
+
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    channel_id: Mapped[str] = mapped_column(String(255))
+    uploads_playlist_id: Mapped[str] = mapped_column(String(255))
+    channel_title: Mapped[str] = mapped_column(String(255))
+    refresh_token_encrypted: Mapped[str] = mapped_column(String(4096))
+    connected_by: Mapped[str] = mapped_column(String(320))
+    connected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

@@ -16,6 +16,7 @@ from app.core.config import get_settings
 from app.core.database import engine
 from app.core.errors import AppError, ErrorBody
 from app.modules.qa_reports.router import router as qa_router
+from app.modules.youtube.router import router as youtube_router
 
 
 @asynccontextmanager
@@ -98,3 +99,4 @@ async def health(db: Db) -> Health:
 
 app.include_router(auth_router)
 app.include_router(qa_router)
+app.include_router(youtube_router)

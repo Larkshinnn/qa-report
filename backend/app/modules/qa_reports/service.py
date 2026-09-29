@@ -508,6 +508,14 @@ async def monthly_metrics(db: AsyncSession, month: str) -> MonthlyMetrics:
             ).select_from(entries)
         )
     ).one()
+    total_hours = await db.scalar(
+        select(func.coalesce(func.sum(ReportItem.duration_hours), 0))
+        .join(DailyReport)
+        .where(
+            DailyReport.account_id == owner_id(db),
+            DailyReport.report_date.between(start, end),
+        )
+    ) or 0
     environments = (
         await db.execute(
             select(entries.c.environment, func.count())
@@ -552,6 +560,9 @@ async def monthly_metrics(db: AsyncSession, month: str) -> MonthlyMetrics:
         pass_rate=round(passed / with_result * 100, 1) if with_result else 0,
         issue_count=issues,
         repeated_entries=with_code - unique,
+        total_hours=round(float(total_hours), 2),
+        hours_target=160,
+        hours_target_met=total_hours >= 160,
         environments=[
             CountGroup(label=label or "Tidak diisi", count=count) for label, count in environments
         ],
