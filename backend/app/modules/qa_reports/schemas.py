@@ -217,12 +217,18 @@ class WorkspaceUserSummary(Schema):
     total_hours: float
     pass_rate: float
     issue_count: int
+    workspace_visible: bool = True
 
 
 class WorkspaceSummary(Schema):
     month: str
     hours_target: int = 160
+    can_manage_workspace: bool = False
     users: list[WorkspaceUserSummary]
+
+
+class WorkspaceVisibilityInput(Schema):
+    visible: bool
 
 
 class CsvPreviewRow(Schema):

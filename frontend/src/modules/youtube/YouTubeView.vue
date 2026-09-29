@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { errorMessage } from '../../shared/api'
 import { useToast } from '../../shared/composables/useToast'
@@ -25,6 +25,8 @@ const description = ref('')
 const tags = ref('')
 const privacy = ref('private')
 const file = ref<File>()
+const fileInput = ref<HTMLInputElement>()
+const previewUrl = ref('')
 const uploadedUrl = ref('')
 const loading = ref(false)
 const uploading = ref(false)
@@ -65,7 +67,10 @@ async function load(): Promise<void> {
 }
 
 function selectFile(event: Event): void {
-  file.value = (event.target as HTMLInputElement).files?.[0]
+  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+  const selected = (event.target as HTMLInputElement).files?.[0]
+  file.value = selected
+  previewUrl.value = selected ? URL.createObjectURL(selected) : ''
 }
 
 async function upload(): Promise<void> {
@@ -86,6 +91,9 @@ async function upload(): Promise<void> {
     description.value = ''
     tags.value = ''
     file.value = undefined
+    if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+    previewUrl.value = ''
+    if (fileInput.value) fileInput.value.value = ''
     pageTokens.value = [undefined]
     pageIndex.value = 0
     await loadVideos()
@@ -124,6 +132,10 @@ async function previousPage(): Promise<void> {
 function dateLabel(value: string | null): string {
   return value ? new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium' }).format(new Date(value)) : '—'
 }
+
+onBeforeUnmount(() => {
+  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+})
 
 onMounted(async () => {
   if (route.query.connected === '1') notify('Channel YouTube berhasil dihubungkan.')
@@ -164,27 +176,43 @@ onMounted(async () => {
         <p v-if="uploadedUrl" class="upload-success">
           Upload berhasil. <a :href="uploadedUrl" target="_blank" rel="noopener noreferrer">Buka video di YouTube</a>
         </p>
-        <form class="upload-form" @submit.prevent="upload">
-          <UiInput v-model="title" label="Judul video" required maxlength="100" />
-          <UiTextarea v-model="description" label="Deskripsi" :rows="3" maxlength="5000" />
-          <UiInput v-model="tags" label="Tag" hint="Pisahkan dengan koma" maxlength="1000" />
-          <UiSelect
-            v-model="privacy"
-            label="Privasi video"
-            :options="[
-              { value: 'private', label: 'Private' },
-              { value: 'unlisted', label: 'Unlisted' },
-              { value: 'public', label: 'Public' },
-            ]"
-          />
-          <label class="file-field">
-            <span>File video <span aria-hidden="true">*</span></span>
-            <input class="field-control" type="file" accept="video/*" required @change="selectFile" />
-            <small v-if="file" class="muted">{{ file.name }} · {{ (file.size / 1048576).toFixed(1) }} MB</small>
-            <small v-else class="muted">Maksimal 512 MB per video.</small>
-          </label>
-          <UiButton type="submit" :loading="uploading" :disabled="!file || !title.trim()">Upload ke YouTube</UiButton>
-        </form>
+        <div class="upload-layout">
+          <form class="upload-form" @submit.prevent="upload">
+            <UiInput v-model="title" class="title-input" label="Judul video" required maxlength="100" />
+            <UiTextarea v-model="description" label="Deskripsi" :rows="4" maxlength="5000" />
+            <UiInput v-model="tags" label="Tag" hint="Pisahkan dengan koma" maxlength="1000" />
+            <UiSelect
+              v-model="privacy"
+              label="Privasi video"
+              :options="[
+                { value: 'private', label: 'Private' },
+                { value: 'unlisted', label: 'Unlisted' },
+                { value: 'public', label: 'Public' },
+              ]"
+            />
+            <label class="file-field">
+              <span>File video <span aria-hidden="true">*</span></span>
+              <input ref="fileInput" class="field-control" type="file" accept="video/*" required @change="selectFile" />
+              <small v-if="file" class="muted">{{ file.name }} · {{ (file.size / 1048576).toFixed(1) }} MB</small>
+              <small v-else class="muted">Maksimal 512 MB per video.</small>
+            </label>
+            <UiButton class="upload-submit" type="submit" :loading="uploading" :disabled="!file || !title.trim()">Upload ke YouTube</UiButton>
+          </form>
+          <aside class="video-preview" aria-label="Preview video">
+            <div class="preview-frame">
+              <video v-if="previewUrl" :src="previewUrl" controls preload="metadata" />
+              <div v-else class="preview-empty">
+                <strong>Preview video</strong>
+                <span class="small muted">Pilih file untuk melihat pratinjau</span>
+              </div>
+            </div>
+            <div class="preview-copy">
+              <strong>{{ title || 'Judul video' }}</strong>
+              <span class="small muted">Pratinjau sebelum diupload · {{ privacy }}</span>
+              <p>{{ description || 'Deskripsi video akan tampil di sini.' }}</p>
+            </div>
+          </aside>
+        </div>
       </UiCard>
       <section class="content-section">
         <div class="section-heading">
@@ -219,9 +247,18 @@ onMounted(async () => {
 .connection-copy { align-items:flex-start; flex-direction:column; }
 .upload-card,.content-section { margin-top:28px; }
 .upload-card h2,.section-heading h2 { margin:0; }
-.upload-form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; margin-top:18px; }
+.upload-layout { display:grid; grid-template-columns:minmax(280px,.9fr) minmax(0,1.1fr); gap:28px; align-items:start; margin-top:18px; }
+.upload-form { display:grid; grid-template-columns:minmax(0,1fr); gap:16px; }
+.upload-form :deep(.title-input) { max-width:360px; font-size:14px; }
+.upload-submit { justify-self:start; }
 .file-field { display:grid; gap:8px; font-size:14px; font-weight:500; }
 .file-field small { font-weight:400; }
+.video-preview { min-width:0; }
+.preview-frame { display:grid; place-items:center; width:100%; aspect-ratio:16/9; overflow:hidden; border-radius:var(--radius-panel); background:var(--color-surface-subtle); }
+.preview-frame video { width:100%; height:100%; object-fit:contain; background:#080808; }
+.preview-empty { display:grid; gap:8px; text-align:center; }
+.preview-copy { display:grid; gap:6px; margin-top:12px; }
+.preview-copy p { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; color:var(--color-text-muted); font-size:13px; }
 .video-list { display:grid; gap:12px; }
 .video-row { display:grid; grid-template-columns:200px minmax(0,1fr); gap:16px; }
 .video-row img { width:100%; aspect-ratio:16/9; object-fit:cover; border-radius:var(--radius-control); }
@@ -230,5 +267,5 @@ onMounted(async () => {
 .video-copy p { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; font-size:14px; }
 .pagination { justify-content:flex-end; margin-top:16px; }
 .upload-success { color:var(--color-success); }
-@media(max-width:640px) { .upload-form,.video-row { grid-template-columns:minmax(0,1fr); } .connection-card { align-items:flex-start; flex-direction:column; } }
+@media(max-width:760px) { .upload-layout,.video-row { grid-template-columns:minmax(0,1fr); } .connection-card { align-items:flex-start; flex-direction:column; } }
 </style>

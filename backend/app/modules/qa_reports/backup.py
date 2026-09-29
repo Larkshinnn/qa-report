@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
+import io
 from uuid import uuid4
+import zipfile
 
 from fastapi import Request
 from pydantic import ValidationError
@@ -112,6 +114,19 @@ async def export_backup(db: AsyncSession) -> str:
             413, "Backup melebihi 10 MB. Gunakan backup PostgreSQL untuk arsip lebih besar."
         )
     return backup
+
+
+def export_monthly_zip(backup_json: str) -> bytes:
+    backup = ReportBackup.model_validate_json(backup_json)
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for report in backup.reports:
+            folder = report.report_date.strftime("%Y-%m")
+            archive.writestr(
+                f"{folder}/{report.report_date.isoformat()}.json",
+                report.model_dump_json(),
+            )
+    return output.getvalue()
 
 
 async def read_backup(request: Request) -> ReportBackup:

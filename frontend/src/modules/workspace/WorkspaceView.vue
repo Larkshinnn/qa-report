@@ -7,13 +7,14 @@ import UiErrorState from '../../shared/components/ui/UiErrorState.vue'
 import UiInput from '../../shared/components/ui/UiInput.vue'
 import UiButton from '../../shared/components/ui/UiButton.vue'
 import UiSkeleton from '../../shared/components/ui/UiSkeleton.vue'
-import { workspaceApi, type WorkspaceSummary } from './api'
+import { workspaceApi, type WorkspaceSummary, type WorkspaceUser } from './api'
 import { localDate } from '../qa-reports/api'
 
 const month = ref(localDate().slice(0, 7))
 const data = ref<WorkspaceSummary>()
 const loading = ref(false)
 const error = ref('')
+const savingAccount = ref('')
 
 async function load(): Promise<void> {
   loading.value = true
@@ -24,6 +25,19 @@ async function load(): Promise<void> {
     error.value = errorMessage(cause)
   } finally {
     loading.value = false
+  }
+}
+
+async function toggleVisibility(user: WorkspaceUser): Promise<void> {
+  savingAccount.value = user.account_id
+  error.value = ''
+  try {
+    await workspaceApi.setVisibility(user.account_id, !user.workspace_visible)
+    await load()
+  } catch (cause) {
+    error.value = errorMessage(cause)
+  } finally {
+    savingAccount.value = ''
   }
 }
 
@@ -61,7 +75,18 @@ onMounted(load)
             <h2>{{ user.display_name }}</h2>
             <p class="small muted">{{ user.email }}</p>
           </div>
-          <strong>{{ user.total_hours.toFixed(1) }} / {{ data.hours_target }} jam</strong>
+          <div class="user-heading-actions">
+            <strong>{{ user.total_hours.toFixed(1) }} / {{ data.hours_target }} jam</strong>
+            <UiButton
+              v-if="data.can_manage_workspace"
+              size="sm"
+              variant="secondary"
+              :loading="savingAccount === user.account_id"
+              @click="toggleVisibility(user)"
+            >
+              {{ user.workspace_visible ? 'Sembunyikan' : 'Tampilkan' }}
+            </UiButton>
+          </div>
         </div>
         <meter
           class="hours-meter"
@@ -95,6 +120,7 @@ onMounted(load)
 .user-heading { display: flex; justify-content: space-between; gap: 16px; align-items: start; }
 .user-heading h2 { margin: 0 0 4px; font-size: 18px; }
 .user-heading p { margin: 0; }
+.user-heading-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .user-heading strong { color: var(--color-primary); white-space: nowrap; }
 .hours-meter { width: 100%; height: 16px; margin: 14px 0; accent-color: var(--color-primary); }
 .user-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 0; }

@@ -23,7 +23,6 @@ const error = ref('')
 const page = ref(1)
 const backupBusy = ref(false)
 const backupError = ref('')
-const importFile = ref<HTMLInputElement>()
 const pages = computed(() => Math.max(1, Math.ceil(data.value.total / 20)))
 const columns: { key: keyof ReportSummary; label: string }[] = [
   { key: 'report_date', label: 'Tanggal' },
@@ -77,30 +76,8 @@ async function downloadBackup(): Promise<void> {
   backupBusy.value = true
   backupError.value = ''
   try {
-    downloadFile(await qaApi.backup(), `qa-reports-backup-${new Date().toISOString().slice(0, 10)}.json`)
+    downloadFile(await qaApi.backup(), `qa-reports-backup-${new Date().toISOString().slice(0, 10)}.zip`)
     notify('Backup QA Report berhasil diunduh.')
-  } catch (cause) {
-    backupError.value = errorMessage(cause)
-  } finally {
-    backupBusy.value = false
-  }
-}
-async function importBackup(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  input.value = ''
-  if (!file) return
-  if (file.size > 10 * 1024 * 1024) {
-    backupError.value = 'File backup maksimal 10 MB.'
-    return
-  }
-  if (!window.confirm(`Import backup "${file.name}"? Laporan dan template yang sudah ada akan dilewati.`)) return
-  backupBusy.value = true
-  backupError.value = ''
-  try {
-    const result = await qaApi.restore(await file.text())
-    notify(`${result.restored} laporan dipulihkan; ${result.skipped} data yang sudah ada dilewati.`)
-    await load()
   } catch (cause) {
     backupError.value = errorMessage(cause)
   } finally {
@@ -118,8 +95,7 @@ onMounted(load)
     </div>
     <div class="qa-actions">
       <UiButton variant="secondary" :loading="backupBusy" @click="downloadBackup">Unduh backup</UiButton>
-      <UiButton variant="secondary" :loading="backupBusy" @click="importFile?.click()">Import backup</UiButton>
-      <input ref="importFile" class="visually-hidden" type="file" accept="application/json,.json" @change="importBackup" />
+      <UiButton variant="secondary" @click="router.push('/qa-reports/import')">Import backup ZIP</UiButton>
       <UiButton @click="router.push('/qa-reports/new')">Tambah laporan</UiButton>
     </div>
   </div>

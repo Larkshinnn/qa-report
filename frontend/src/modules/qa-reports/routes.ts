@@ -6,6 +6,11 @@ export const qaReportRoutes: RouteRecordRaw[] = [
     meta: { title: 'Daftar laporan QA' },
   },
   {
+    path: '/qa-reports/import',
+    component: () => import('./views/ImportView.vue'),
+    meta: { title: 'Import backup' },
+  },
+  {
     path: '/qa-reports/new',
     component: () => import('./views/ReportView.vue'),
     meta: { title: 'Laporan baru', newReport: true },

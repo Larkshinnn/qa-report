@@ -81,6 +81,26 @@ export interface Metrics {
   results: { label: string; count: number }[]
   trend: { date: string; count: number }[]
 }
+export interface ZipImportPreview {
+  reports: {
+    report_date: string
+    month: string
+    title: string
+    activity_count: number
+    total_hours: number
+    already_exists: boolean
+  }[]
+  months: { month: string; count: number }[]
+  total_reports: number
+  new_reports: number
+  existing_reports: number
+}
+export interface ZipImportResult {
+  mode: 'missing' | 'overwrite'
+  added: number
+  overwritten: number
+  skipped: number
+}
 export interface CsvPreviewRow {
   row_id: string
   date: string
@@ -102,6 +122,18 @@ export const qaApi = {
   remove: (id: string, version: number): Promise<void> =>
     api(`${base}/${encodeURIComponent(id)}?version=${version}`, { method: 'DELETE' }),
   backup: (): Promise<Blob> => apiFile(`${base}/backup`),
+  previewZip: (archive: Blob): Promise<ZipImportPreview> =>
+    api(`${base}/import/preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/zip' },
+      body: archive,
+    }),
+  importZip: (archive: Blob, mode: 'missing' | 'overwrite'): Promise<ZipImportResult> =>
+    api(`${base}/import?${new URLSearchParams({ mode })}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/zip' },
+      body: archive,
+    }),
   restore: (json: string): Promise<{ restored: number; skipped: number }> =>
     api(`${base}/restore`, { method: 'POST', body: json }),
   list: (filters: Record<string, string> = {}): Promise<ReportPage> =>

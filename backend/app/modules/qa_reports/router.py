@@ -4,7 +4,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 
-from app.core.auth import OwnedDb, require_user
+from app.core.auth import OwnedDb, User, require_user
+from app.core.errors import AppError
+from app.core.models import Account
 from app.modules.qa_reports import backup, delivery, service
 from app.modules.qa_reports.workspace import workspace_summary
 from app.modules.qa_reports.schemas import (
@@ -22,7 +24,9 @@ from app.modules.qa_reports.schemas import (
     TemplateOutput,
     TemplateUpdate,
     VersionInput,
+    WorkspaceVisibilityInput,
 )
+from app.modules.qa_reports import zip_import
 
 router = APIRouter(
     prefix="/api/qa-reports", tags=["qa_reports"], dependencies=[Depends(require_user)]
@@ -80,8 +84,42 @@ async def monthly(
 
 
 @router.get("/workspace")
-async def shared_workspace(db: OwnedDb, month: Annotated[str, Query(pattern=r"^\d{4}-\d{2}$")]):
-    return await workspace_summary(db, month)
+async def shared_workspace(
+    db: OwnedDb,
+    user: User,
+    month: Annotated[str, Query(pattern=r"^\d{4}-\d{2}$")],
+):
+    return await workspace_summary(db, month, can_manage=user.is_superadmin)
+
+
+@router.patch("/workspace/users/{account_id}/visibility", status_code=204)
+async def set_workspace_visibility(
+    account_id: UUID, body: WorkspaceVisibilityInput, db: OwnedDb, user: User
+) -> Response:
+    if not user.is_superadmin:
+        raise AppError(403, "Hanya superadmin yang dapat mengatur visibilitas akun.")
+    account = await db.get(Account, account_id)
+    if account is None:
+        raise AppError(404, "Akun tidak ditemukan.")
+    account.workspace_visible = body.visible
+    await db.commit()
+    return Response(status_code=204)
+
+
+@router.post("/import/preview")
+async def preview_zip_import(request: Request, db: OwnedDb):
+    reports = await zip_import.read_zip(request)
+    return await zip_import.preview(db, reports)
+
+
+@router.post("/import")
+async def import_zip(
+    request: Request,
+    db: OwnedDb,
+    mode: Annotated[Literal["missing", "overwrite"], Query()],
+):
+    reports = await zip_import.read_zip(request)
+    return await zip_import.restore(db, reports, mode=mode)
 
 
 @router.get("/monthly.csv")
@@ -122,10 +160,10 @@ async def options() -> DeliveryOptions:
 @router.get("/backup")
 async def backup_download(db: OwnedDb) -> Response:
     return Response(
-        await backup.export_backup(db),
-        media_type="application/json",
+        backup.export_monthly_zip(await backup.export_backup(db)),
+        media_type="application/zip",
         headers={
-            "Content-Disposition": 'attachment; filename="qa-reports-backup.json"',
+            "Content-Disposition": 'attachment; filename="qa-reports-backup.zip"',
         },
     )
 

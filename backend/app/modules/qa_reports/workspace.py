@@ -7,7 +7,9 @@ from app.modules.qa_reports.schemas import WorkspaceSummary, WorkspaceUserSummar
 from app.modules.qa_reports.service import month_bounds
 
 
-async def workspace_summary(db: AsyncSession, month: str) -> WorkspaceSummary:
+async def workspace_summary(
+    db: AsyncSession, month: str, *, can_manage: bool = False
+) -> WorkspaceSummary:
     start, end = month_bounds(month)
     report_join = and_(
         DailyReport.account_id == Account.id,
@@ -34,12 +36,19 @@ async def workspace_summary(db: AsyncSession, month: str) -> WorkspaceSummary:
             .select_from(Account)
             .outerjoin(DailyReport, report_join)
             .outerjoin(ReportItem, ReportItem.daily_report_id == DailyReport.id)
-            .group_by(Account.id, Account.display_name, Account.email)
+            .where(Account.workspace_visible.is_(True) | can_manage)
+            .group_by(
+                Account.id,
+                Account.display_name,
+                Account.email,
+                Account.workspace_visible,
+            )
             .order_by(Account.display_name, Account.email)
         )
     ).all()
     return WorkspaceSummary(
         month=month,
+        can_manage_workspace=can_manage,
         users=[
             WorkspaceUserSummary(
                 account_id=row.id,
@@ -51,6 +60,7 @@ async def workspace_summary(db: AsyncSession, month: str) -> WorkspaceSummary:
                 total_hours=round(float(row.total_hours), 2),
                 pass_rate=(round(row.passed / row.with_result * 100, 1) if row.with_result else 0),
                 issue_count=row.issue_count,
+                workspace_visible=row.workspace_visible,
             )
             for row in rows
         ],
