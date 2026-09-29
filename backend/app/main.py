@@ -27,15 +27,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="QA Report", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 settings = get_settings()
+allowed_origins = [
+    origin.strip().rstrip("/")
+    for origin in settings.allowed_origins.split(",")
+    if origin.strip()
+]
 app.add_middleware(
     TrustedHostMiddleware,
     allowed_hosts=[host.strip() for host in settings.allowed_hosts.split(",") if host.strip()],
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        origin.strip() for origin in settings.allowed_origins.split(",") if origin.strip()
-    ],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "X-QA-Request"],
@@ -46,9 +49,8 @@ app.add_middleware(
 async def local_security(request: Request, call_next: RequestResponseEndpoint) -> Response:
     # Mutations require same-origin + a non-simple header. No CORS is enabled.
     if request.method not in {"GET", "HEAD", "OPTIONS"}:
-        origins = get_settings().allowed_origins.split(",")
         if (
-            request.headers.get("origin") not in origins
+            request.headers.get("origin") not in allowed_origins
             or request.headers.get("x-qa-request") != "1"
         ):
             return JSONResponse(

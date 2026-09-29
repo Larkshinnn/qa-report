@@ -21,6 +21,7 @@ async def workspace_summary(
                 Account.id,
                 Account.display_name,
                 Account.email,
+                Account.workspace_visible,
                 func.array_agg(distinct(DailyReport.report_date))
                 .filter(DailyReport.id.is_not(None))
                 .label("report_dates"),
