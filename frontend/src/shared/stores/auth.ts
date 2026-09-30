@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { api } from '../api'
+import { api, apiBase } from '../api'
 
 interface AuthState {
   authenticated: boolean
@@ -32,8 +32,7 @@ export const useAuthStore = defineStore('auth', () => {
     update(await api<AuthState>('/auth/status'))
   }
   function loginWithGoogle(): void {
-    const base = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
-    window.location.assign(`${base}/auth/google/start`)
+    window.location.assign(`${apiBase}/auth/google/start`)
   }
   async function logout(): Promise<void> {
     await api<void>('/auth/logout', { method: 'POST' })

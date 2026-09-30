@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { errorMessage } from '../../shared/api'
+import { apiBase, errorMessage } from '../../shared/api'
 import { useToast } from '../../shared/composables/useToast'
 import UiBreadcrumbs from '../../shared/components/ui/UiBreadcrumbs.vue'
 import UiButton from '../../shared/components/ui/UiButton.vue'
@@ -35,8 +35,7 @@ const connected = computed(() => status.value?.connected ?? false)
 const canConnect = computed(() => status.value?.can_connect ?? false)
 
 function connect(): void {
-  const base = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
-  window.location.assign(`${base}/youtube/connect`)
+  window.location.assign(`${apiBase}/youtube/connect`)
 }
 
 async function loadVideos(token?: string): Promise<void> {

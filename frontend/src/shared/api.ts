@@ -8,7 +8,9 @@ export class ApiError extends Error {
   }
 }
 
-const apiBase = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '')
+export const apiBase = (
+  import.meta.env.PROD ? '/api' : import.meta.env.VITE_API_BASE_URL || '/api'
+).replace(/\/$/, '')
 
 async function response(path: string, options: RequestInit = {}): Promise<Response> {
   let result: Response
