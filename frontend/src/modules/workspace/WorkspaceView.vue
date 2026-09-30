@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { errorMessage } from '../../shared/api'
 import UiBreadcrumbs from '../../shared/components/ui/UiBreadcrumbs.vue'
 import UiCard from '../../shared/components/ui/UiCard.vue'
@@ -15,6 +15,14 @@ const data = ref<WorkspaceSummary>()
 const loading = ref(false)
 const error = ref('')
 const savingAccount = ref('')
+const visibleUsers = computed(() => data.value?.users.filter((user) => user.workspace_visible) ?? [])
+const hiddenUsers = computed(() => data.value?.users.filter((user) => !user.workspace_visible) ?? [])
+const userSections = computed(() => [
+  { title: 'Ditampilkan di workspace', users: visibleUsers.value },
+  ...(data.value?.can_manage_workspace
+    ? [{ title: 'Disembunyikan dari workspace', users: hiddenUsers.value }]
+    : []),
+])
 
 async function load(): Promise<void> {
   loading.value = true
@@ -67,55 +75,72 @@ onMounted(load)
   <UiSkeleton v-if="loading" :lines="5" />
   <UiErrorState v-else-if="error" :message="error" retryable @retry="load" />
   <template v-else-if="data">
-    <p class="small muted">{{ data.users.length }} akun · {{ data.month }}</p>
-    <div v-if="data.users.length" class="user-list">
-      <UiCard v-for="user in data.users" :key="user.account_id" padding="md">
-        <div class="user-heading">
-          <div>
-            <h2>{{ user.display_name }}</h2>
-            <p class="small muted">{{ user.email }}</p>
+    <p class="small muted">{{ visibleUsers.length }} akun ditampilkan · {{ data.month }}</p>
+    <section
+      v-for="(section, index) in userSections"
+      :key="section.title"
+      class="user-section"
+      :aria-labelledby="`workspace-section-${index}`"
+    >
+      <div class="section-heading">
+        <h2 :id="`workspace-section-${index}`">{{ section.title }}</h2>
+        <span class="small muted">{{ section.users.length }} akun</span>
+      </div>
+      <div v-if="section.users.length" class="user-list">
+        <UiCard v-for="user in section.users" :key="user.account_id" padding="md">
+          <div class="user-heading">
+            <div>
+              <h2>{{ user.display_name }}</h2>
+              <p class="small muted">{{ user.email }}</p>
+            </div>
+            <div class="user-heading-actions">
+              <strong>{{ user.total_hours.toFixed(1) }} / {{ data.hours_target }} jam</strong>
+              <UiButton
+                v-if="data.can_manage_workspace"
+                size="sm"
+                variant="secondary"
+                :loading="savingAccount === user.account_id"
+                @click="toggleVisibility(user)"
+              >
+                {{ user.workspace_visible ? 'Sembunyikan' : 'Tampilkan' }}
+              </UiButton>
+            </div>
           </div>
-          <div class="user-heading-actions">
-            <strong>{{ user.total_hours.toFixed(1) }} / {{ data.hours_target }} jam</strong>
-            <UiButton
-              v-if="data.can_manage_workspace"
-              size="sm"
-              variant="secondary"
-              :loading="savingAccount === user.account_id"
-              @click="toggleVisibility(user)"
-            >
-              {{ user.workspace_visible ? 'Sembunyikan' : 'Tampilkan' }}
-            </UiButton>
+          <meter
+            class="hours-meter"
+            :value="user.total_hours"
+            :max="data.hours_target"
+            min="0"
+            :aria-label="`${user.display_name}: ${user.total_hours} dari ${data.hours_target} jam`"
+          />
+          <dl class="user-metrics">
+            <div><dt>Laporan</dt><dd>{{ user.report_count }}</dd></div>
+            <div><dt>Aktivitas</dt><dd>{{ user.activity_count }}</dd></div>
+            <div><dt>Pass rate</dt><dd>{{ user.activity_count ? `${user.pass_rate}%` : '—' }}</dd></div>
+            <div><dt>Issue</dt><dd>{{ user.issue_count }}</dd></div>
+          </dl>
+          <div class="report-days">
+            <span class="small muted">Tanggal laporan</span>
+            <span v-if="user.report_dates.length" class="day-list">
+              <span v-for="day in user.report_dates" :key="day" class="day-chip">{{ dateLabel(day) }}</span>
+            </span>
+            <span v-else class="small muted">Belum ada laporan bulan ini</span>
           </div>
-        </div>
-        <meter
-          class="hours-meter"
-          :value="user.total_hours"
-          :max="data.hours_target"
-          min="0"
-          :aria-label="`${user.display_name}: ${user.total_hours} dari ${data.hours_target} jam`"
-        />
-        <dl class="user-metrics">
-          <div><dt>Laporan</dt><dd>{{ user.report_count }}</dd></div>
-          <div><dt>Aktivitas</dt><dd>{{ user.activity_count }}</dd></div>
-          <div><dt>Pass rate</dt><dd>{{ user.activity_count ? `${user.pass_rate}%` : '—' }}</dd></div>
-          <div><dt>Issue</dt><dd>{{ user.issue_count }}</dd></div>
-        </dl>
-        <div class="report-days">
-          <span class="small muted">Tanggal laporan</span>
-          <span v-if="user.report_dates.length" class="day-list">
-            <span v-for="day in user.report_dates" :key="day" class="day-chip">{{ dateLabel(day) }}</span>
-          </span>
-          <span v-else class="small muted">Belum ada laporan bulan ini</span>
-        </div>
-      </UiCard>
-    </div>
-    <UiCard v-else padding="md"><p>Belum ada akun terdaftar.</p></UiCard>
+        </UiCard>
+      </div>
+      <p v-else class="small muted section-empty">
+        {{ section.title.startsWith('Ditampilkan') ? 'Belum ada akun yang ditampilkan di workspace.' : 'Tidak ada akun yang disembunyikan.' }}
+      </p>
+    </section>
   </template>
 </template>
 
 <style scoped>
 .month-controls { display: flex; align-items: end; gap: 14px; margin: 24px 0; }
+.user-section { margin-top: 28px; }
+.section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--color-border); }
+.section-heading h2 { margin: 0; font-size: 18px; }
+.section-empty { margin: 14px 0 0; }
 .user-list { display: grid; gap: 14px; margin-top: 18px; }
 .user-heading { display: flex; justify-content: space-between; gap: 16px; align-items: start; }
 .user-heading h2 { margin: 0 0 4px; font-size: 18px; }

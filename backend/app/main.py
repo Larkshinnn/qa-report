@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -17,6 +18,13 @@ from app.core.database import engine
 from app.core.errors import AppError, ErrorBody
 from app.modules.qa_reports.router import router as qa_router
 from app.modules.youtube.router import router as youtube_router
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+logging.getLogger().setLevel(logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -80,6 +88,12 @@ async def validation_error(request: Request, error: RequestValidationError) -> J
 
 @app.exception_handler(Exception)
 async def unexpected_error(request: Request, error: Exception) -> JSONResponse:
+    logger.error(
+        "request_failed path=%s method=%s exception_type=%s",
+        request.url.path,
+        request.method,
+        type(error).__name__,
+    )
     return JSONResponse(
         ErrorBody(
             detail="Server tidak dapat menyelesaikan permintaan. "

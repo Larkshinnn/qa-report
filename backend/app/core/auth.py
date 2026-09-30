@@ -1,3 +1,4 @@
+import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
@@ -27,6 +28,7 @@ from app.core.security import (
 Db = Annotated[AsyncSession, Depends(get_db)]
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 OAUTH_STATE_COOKIE = "qa_report_oauth_state"
+logger = logging.getLogger(__name__)
 
 
 class AuthState(BaseModel):
@@ -43,10 +45,12 @@ def frontend_origin() -> str:
 
 
 async def session_account(request: Request, db: AsyncSession) -> Account | None:
-    digest = read_cookie(request.cookies.get(get_settings().session_cookie_name))
+    cookie = request.cookies.get(get_settings().session_cookie_name)
+    digest = read_cookie(cookie)
     if digest is None:
+        request.state.auth_session_state = "cookie_missing" if not cookie else "cookie_invalid"
         return None
-    return await db.scalar(
+    account = await db.scalar(
         select(Account)
         .join(Session)
         .where(
@@ -54,6 +58,13 @@ async def session_account(request: Request, db: AsyncSession) -> Account | None:
             Session.expires_at > datetime.now(UTC),
         )
     )
+    request.state.auth_session_state = "authenticated" if account else "session_missing_or_expired"
+    return account
+
+
+def email_hint(email: str) -> str:
+    local, separator, domain = email.partition("@")
+    return f"{local[:1]}***@{domain}" if separator else "unavailable"
 
 
 async def require_user(request: Request, db: Db) -> Account:
@@ -122,7 +133,13 @@ async def issue_session(
 
 @router.get("/status")
 async def status(request: Request, db: Db) -> AuthState:
-    return auth_state(await session_account(request, db))
+    account = await session_account(request, db)
+    logger.info(
+        "auth_status state=%s origin=%s",
+        request.state.auth_session_state,
+        request.headers.get("origin", "none"),
+    )
+    return auth_state(account)
 
 
 @router.get("/me")
@@ -134,8 +151,14 @@ async def me(user: User) -> AuthState:
 async def google_start(response: Response) -> RedirectResponse:
     settings = get_settings()
     if not settings.google_client_id or not settings.google_client_secret:
+        logger.error("oauth_start_failed reason=google_credentials_missing")
         raise AppError(503, "Google Login belum dikonfigurasi di backend.")
     state = secrets.token_urlsafe(32)
+    logger.info(
+        "oauth_start_started cookie_secure=%s redirect_uri_configured=%s",
+        settings.cookie_secure,
+        bool(settings.google_redirect_uri),
+    )
     query = urlencode(
         {
             "client_id": settings.google_client_id,
@@ -170,14 +193,18 @@ async def google_callback(
     state: str | None = Query(default=None),
     error: str | None = Query(default=None),
 ) -> RedirectResponse:
-    if (
-        error
-        or not code
-        or not state
-        or not secrets.compare_digest(
-            state, read_state(request.cookies.get(OAUTH_STATE_COOKIE)) or ""
+    if error:
+        logger.warning("oauth_callback_rejected reason=google_returned_error")
+        raise AppError(400, "Login Google dibatalkan atau tidak valid.")
+    if not code:
+        logger.warning("oauth_callback_rejected reason=authorization_code_missing")
+        raise AppError(400, "Login Google dibatalkan atau tidak valid.")
+    saved_state = read_state(request.cookies.get(OAUTH_STATE_COOKIE))
+    if not state or not secrets.compare_digest(state, saved_state or ""):
+        logger.warning(
+            "oauth_callback_rejected reason=state_mismatch_or_cookie_missing state_cookie_present=%s",
+            bool(request.cookies.get(OAUTH_STATE_COOKIE)),
         )
-    ):
         raise AppError(400, "Login Google dibatalkan atau tidak valid.")
     settings = get_settings()
     try:
@@ -193,34 +220,48 @@ async def google_callback(
                 },
             )
             if token_response.status_code != 200:
+                logger.warning(
+                    "oauth_token_exchange_failed http_status=%s", token_response.status_code
+                )
                 raise AppError(502, "Google tidak menerima proses login.")
             access_token = token_response.json().get("access_token")
             if not isinstance(access_token, str) or not access_token:
+                logger.warning("oauth_token_exchange_failed reason=access_token_missing")
                 raise AppError(502, "Google tidak mengembalikan token login.")
             profile_response = await client.get(
                 "https://openidconnect.googleapis.com/v1/userinfo",
                 headers={"Authorization": f"Bearer {access_token}"},
             )
             if profile_response.status_code != 200:
+                logger.warning(
+                    "oauth_profile_lookup_failed http_status=%s", profile_response.status_code
+                )
                 raise AppError(502, "Profil Google tidak dapat diverifikasi.")
             profile = profile_response.json()
     except AppError:
         raise
     except httpx.HTTPError:
+        logger.warning("oauth_google_request_failed reason=network_error")
         raise AppError(502, "Google tidak dapat dihubungi. Coba lagi.") from None
 
     google_sub = profile.get("sub")
     email = profile.get("email")
     email_verified = profile.get("email_verified") is True
     if not isinstance(google_sub, str) or not isinstance(email, str) or not email_verified:
+        logger.warning(
+            "oauth_profile_rejected reason=identity_or_verified_email_missing email=%s",
+            email_hint(email) if isinstance(email, str) else "unavailable",
+        )
         raise AppError(403, "Akun Google belum memiliki email terverifikasi.")
     email = email.lower()
     if settings.allowed_email_set and email not in settings.allowed_email_set:
+        logger.warning("oauth_profile_rejected reason=email_not_allowed email=%s", email_hint(email))
         raise AppError(403, "Akun Google ini belum diizinkan menggunakan QA Report.")
 
     account = await db.scalar(
         select(Account).where(Account.google_sub == google_sub).with_for_update()
     )
+    account_created = account is None
     if account is None:
         account = Account(
             google_sub=google_sub,
@@ -240,6 +281,14 @@ async def google_callback(
     response = RedirectResponse(frontend_origin(), status_code=302)
     await issue_session(db, response, request, account)
     response.delete_cookie(OAUTH_STATE_COOKIE, path="/api/auth/google")
+    logger.info(
+        "oauth_login_succeeded result=%s account_id=%s email=%s redirect_origin=%s cookie_secure=%s",
+        "account_created" if account_created else "existing_account",
+        account.id,
+        email_hint(email),
+        frontend_origin(),
+        settings.cookie_secure,
+    )
     return response
 
 
