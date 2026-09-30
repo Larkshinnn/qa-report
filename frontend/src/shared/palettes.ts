@@ -13,10 +13,10 @@ export interface SavedPalette {
 export const savedPalettesStorageKey = 'qa-portal:saved-color-palettes'
 export const savedPalettesLimit = 20
 export const defaultPalette: Palette = {
-  ink: '#17382d',
-  violet: '#60766b',
-  mauve: '#b54a25',
-  blush: '#e8dfcc',
+  ink: '#173b63',
+  violet: '#567694',
+  mauve: '#1678b8',
+  blush: '#dceaf6',
 }
 // Curated combinations of Material 2014 swatches, not complete Material themes.
 export const palettePresets = [
@@ -133,17 +133,21 @@ function onColor(color: string): string {
 }
 
 export function paletteTokens(palette: Palette, dark: boolean): Record<string, string> {
-  const page = dark ? '#111713' : '#f1efe7'
-  const surface = dark ? '#18211b' : '#fbfaf4'
+  const page = dark ? '#1c1f24' : '#f1f5f9'
+  const surface = dark ? '#22262c' : '#ffffff'
   const subtle = mix(palette.ink, surface, dark ? 0.88 : 0.96)
   const panel = mix(palette.mauve, surface, dark ? 0.82 : 0.92)
-  const highlight = mix(palette.blush, '#ffffff', 0.65)
+  const highlight = mix(palette.blush, '#ffffff', 0.35)
   const accentSurface = dark ? mix(palette.blush, surface, 0.84) : highlight
   const backgrounds = [page, surface, subtle, panel, accentSurface]
-  const primary = readable(palette.ink, backgrounds, dark)
+  const primary = readable(dark ? palette.mauve : palette.ink, backgrounds, dark)
   const secondary = readable(palette.violet, backgrounds, dark)
   const accent = readable(palette.mauve, backgrounds, dark)
   const ink = readable(palette.ink, ['#ffffff', highlight], false)
+  const sidebar = dark ? mix(palette.ink, '#08172a', 0.48) : mix(palette.blush, '#ffffff', 0.48)
+  const sidebarActive = dark
+    ? mix(palette.blush, sidebar, 0.12)
+    : mix(palette.mauve, sidebar, 0.82)
   return {
     '--color-ink': ink,
     '--color-violet': palette.violet,
@@ -153,11 +157,11 @@ export function paletteTokens(palette: Palette, dark: boolean): Record<string, s
     '--color-surface': surface,
     '--color-surface-subtle': subtle,
     '--color-surface-accent': accentSurface,
-    '--color-text': dark ? '#edf1e9' : '#1b211d',
-    '--color-text-muted': readable(dark ? '#bdc1c6' : '#465149', backgrounds, dark),
-    '--color-text-on-ink': '#fffdf4',
-    '--color-border': dark ? '#344239' : '#b7bbb2',
-    '--color-border-strong': dark ? '#56645b' : '#7f887f',
+    '--color-text': dark ? '#f0f3f7' : '#182d46',
+    '--color-text-muted': readable(dark ? '#b0bac7' : '#4d647d', backgrounds, dark),
+    '--color-text-on-ink': '#f5f8fc',
+    '--color-border': dark ? '#373e47' : '#d0dbe6',
+    '--color-border-strong': dark ? '#515b67' : '#a7b9cb',
     '--color-primary': primary,
     '--color-primary-hover': mix(primary, dark ? '#ffffff' : '#000000', 0.12),
     '--color-on-primary': onColor(primary),
@@ -168,11 +172,11 @@ export function paletteTokens(palette: Palette, dark: boolean): Record<string, s
     '--color-brand-muted': secondary,
     '--color-brand-panel': panel,
     '--color-on-blush': onColor(highlight),
-    '--color-sidebar': mix(palette.ink, dark ? '#000000' : '#10251d', dark ? 0.56 : 0.2),
-    '--color-sidebar-text': '#f7f3e7',
-    '--color-sidebar-muted': dark ? '#9fb2a7' : '#ced9d2',
-    '--color-sidebar-active': dark ? '#e8e5da' : '#f3f0e5',
-    '--color-ledger-line': dark ? '#2c3931' : '#c7c9c0',
+    '--color-sidebar': sidebar,
+    '--color-sidebar-text': dark ? '#f1f5fa' : readable(palette.ink, [sidebar], false),
+    '--color-sidebar-muted': dark ? '#aec2d7' : readable(palette.violet, [sidebar], false),
+    '--color-sidebar-active': sidebarActive,
+    '--color-ledger-line': dark ? '#343c46' : '#cbd8e4',
   }
 }
 
