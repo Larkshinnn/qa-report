@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, useId } from 'vue'
 import { useRoute } from 'vue-router'
 import { apiBase, errorMessage } from '../../shared/api'
 import { useToast } from '../../shared/composables/useToast'
@@ -26,13 +26,18 @@ const tags = ref('')
 const privacy = ref('private')
 const file = ref<File>()
 const fileInput = ref<HTMLInputElement>()
+const fileInputId = useId()
 const previewUrl = ref('')
 const uploadedUrl = ref('')
 const loading = ref(false)
 const uploading = ref(false)
+const dragging = ref(false)
+const dragDepth = ref(0)
 const error = ref('')
+const fileError = ref('')
 const connected = computed(() => status.value?.connected ?? false)
 const canConnect = computed(() => status.value?.can_connect ?? false)
+const maxVideoBytes = 512 * 1024 * 1024
 
 function connect(): void {
   window.location.assign(`${apiBase}/youtube/connect`)
@@ -65,11 +70,68 @@ async function load(): Promise<void> {
   }
 }
 
-function selectFile(event: Event): void {
+function clearFile(): void {
   if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
-  const selected = (event.target as HTMLInputElement).files?.[0]
-  file.value = selected
-  previewUrl.value = selected ? URL.createObjectURL(selected) : ''
+  file.value = undefined
+  previewUrl.value = ''
+  if (fileInput.value) fileInput.value.value = ''
+}
+
+function chooseFile(candidate?: File): void {
+  if (!candidate || uploading.value) return
+  fileError.value = ''
+  if (!candidate.type.startsWith('video/')) {
+    clearFile()
+    fileError.value = 'Pilih file video dengan tipe MIME video.'
+    return
+  }
+  if (!candidate.size || candidate.size > maxVideoBytes) {
+    clearFile()
+    fileError.value = 'Ukuran video harus antara 1 byte dan 512 MB.'
+    return
+  }
+  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+  file.value = candidate
+  previewUrl.value = URL.createObjectURL(candidate)
+}
+
+function selectFile(event: Event): void {
+  const input = event.target as HTMLInputElement
+  const candidate = input.files?.[0]
+  input.value = ''
+  chooseFile(candidate)
+}
+
+function activateFilePicker(event: KeyboardEvent): void {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault()
+    fileInput.value?.click()
+  }
+}
+
+function dragEnter(event: DragEvent): void {
+  event.preventDefault()
+  if (uploading.value) return
+  dragDepth.value += 1
+  dragging.value = true
+}
+
+function dragLeave(event: DragEvent): void {
+  event.preventDefault()
+  dragDepth.value = Math.max(0, dragDepth.value - 1)
+  if (!dragDepth.value) dragging.value = false
+}
+
+function dragOver(event: DragEvent): void {
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = uploading.value ? 'none' : 'copy'
+}
+
+function dropFile(event: DragEvent): void {
+  event.preventDefault()
+  dragDepth.value = 0
+  dragging.value = false
+  chooseFile(event.dataTransfer?.files[0])
 }
 
 async function upload(): Promise<void> {
@@ -189,12 +251,34 @@ onMounted(async () => {
                 { value: 'public', label: 'Public' },
               ]"
             />
-            <label class="file-field">
-              <span>File video <span aria-hidden="true">*</span></span>
-              <input ref="fileInput" class="field-control" type="file" accept="video/*" required @change="selectFile" />
-              <small v-if="file" class="muted">{{ file.name }} · {{ (file.size / 1048576).toFixed(1) }} MB</small>
-              <small v-else class="muted">Maksimal 512 MB per video.</small>
+            <label
+              :id="fileInputId + '-dropzone'"
+              class="file-drop-zone"
+              :class="{ 'file-drop-active': dragging, 'file-drop-disabled': uploading }"
+              :for="fileInputId"
+              role="button"
+              tabindex="0"
+              aria-label="Pilih atau jatuhkan file video, maksimal 512 megabyte"
+              @dragenter="dragEnter"
+              @dragover="dragOver"
+              @dragleave="dragLeave"
+              @drop="dropFile"
+              @keydown="activateFilePicker"
+            >
+              <input
+                :id="fileInputId"
+                ref="fileInput"
+                class="visually-hidden"
+                type="file"
+                accept="video/*"
+                :disabled="uploading"
+                @change="selectFile"
+              />
+              <strong>{{ dragging ? 'Lepaskan video untuk memilih file' : file?.name || 'Tarik dan lepas video di sini' }}</strong>
+              <span v-if="file" class="small muted">{{ (file.size / 1048576).toFixed(1) }} MB · klik untuk mengganti</span>
+              <span v-else class="small muted">atau klik untuk memilih · maksimal 512 MB</span>
             </label>
+            <p v-if="fileError" class="file-error" role="alert">{{ fileError }}</p>
             <UiButton class="upload-submit" type="submit" :loading="uploading" :disabled="!file || !title.trim()">Upload ke YouTube</UiButton>
           </form>
           <aside class="video-preview" aria-label="Preview video">
@@ -250,8 +334,13 @@ onMounted(async () => {
 .upload-form { display:grid; grid-template-columns:minmax(0,1fr); gap:16px; }
 .upload-form :deep(.title-input) { max-width:360px; font-size:14px; }
 .upload-submit { justify-self:start; }
-.file-field { display:grid; gap:8px; font-size:14px; font-weight:500; }
-.file-field small { font-weight:400; }
+.file-drop-zone { display:grid; place-content:center; gap:8px; min-height:136px; padding:20px; border:1px dashed var(--color-border-strong); border-radius:var(--radius-panel); background:var(--color-surface-subtle); color:var(--color-text); text-align:center; cursor:pointer; transition:background-color var(--duration-fast) var(--ease-out),border-color var(--duration-fast) var(--ease-out); }
+.file-drop-zone strong { color:var(--color-primary); overflow-wrap:anywhere; }
+.file-drop-zone:hover,.file-drop-active { border-color:var(--color-primary); background:var(--color-surface-accent); }
+.file-drop-zone:focus-visible { outline:2px solid var(--color-focus); outline-offset:3px; }
+.file-drop-disabled { opacity:.6; cursor:progress; }
+.file-error { color:var(--color-danger); font-size:13px; }
+.visually-hidden { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 .video-preview { min-width:0; }
 .preview-frame { display:grid; place-items:center; width:100%; aspect-ratio:16/9; overflow:hidden; border-radius:var(--radius-panel); background:var(--color-surface-subtle); }
 .preview-frame video { width:100%; height:100%; object-fit:contain; background:#080808; }

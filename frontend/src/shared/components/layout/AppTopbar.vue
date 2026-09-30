@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useRoute } from 'vue-router'
-import { PhList, PhMagnifyingGlass, PhCaretRight } from '@phosphor-icons/vue'
+import { PhList, PhMagnifyingGlass, PhCaretRight, PhMoon, PhSun } from '@phosphor-icons/vue'
 import { useUiStore } from '../../stores/ui'
 import { useAuthStore } from '../../stores/auth'
 import UiButton from '../ui/UiButton.vue'
@@ -43,6 +43,16 @@ const route = useRoute()
         <PhMagnifyingGlass :size="17" />
         <span class="search-label">Cari di QA Report</span>
         <kbd>Ctrl K</kbd>
+      </UiButton>
+      <UiButton
+        variant="ghost"
+        size="sm"
+        icon-only
+        :label="ui.resolvedTheme === 'dark' ? 'Gunakan tema terang' : 'Gunakan tema gelap'"
+        @click="ui.setTheme(ui.resolvedTheme === 'dark' ? 'light' : 'dark')"
+      >
+        <PhSun v-if="ui.resolvedTheme === 'dark'" :size="19" />
+        <PhMoon v-else :size="19" />
       </UiButton>
       <UiButton
         variant="ghost"
