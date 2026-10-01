@@ -324,7 +324,8 @@ onUnmounted(() => {
             maxlength="20000"
             required
             :error="syntaxError || undefined"
-            hint="Teks dan baris kosong mengikuti format yang kamu tulis. Gunakan *tebal* untuk Slack."
+            hint="Teks dan baris kosong mengikuti format yang kamu tulis. Tab untuk indentasi; Shift+Tab mengurangi indentasi. Gunakan *tebal* untuk Slack."
+            tab-indent
           />
           <p
             v-if="!syntaxError"

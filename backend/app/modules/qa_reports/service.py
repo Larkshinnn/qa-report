@@ -376,9 +376,7 @@ def generate_preview(report: DailyReport) -> Preview:
         return generate_template_preview(report)
     if not report.items:
         raise AppError(422, "Tambahkan aktivitas untuk membuat preview laporan.")
-    formatted_date = (
-        f"{report.report_date.strftime('%B')} {report.report_date.day:02d}, {report.report_date.year}"
-    )
+    formatted_date = format_daily_date(report.report_date)
     sections: list[tuple[str, list[str]]] = [
         (
             "Testing Summary:",
@@ -431,6 +429,15 @@ def generate_preview(report: DailyReport) -> Preview:
     )
 
 
+def format_daily_date(value: date) -> str:
+    weekdays = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+    months = (
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+    )
+    return f"{weekdays[value.weekday()]}, {months[value.month - 1]} {value.day:02d}, {value.year}"
+
+
 def format_coverage_link(label: str | None, url: str) -> str:
     from urllib.parse import urlsplit
 
@@ -469,10 +476,7 @@ def generate_template_preview(report: DailyReport) -> Preview:
     report_values = {
         **(report.template_values or {}),
         "report_title": report.title,
-        "report_date": (
-            f"{report.report_date.strftime('%B')} "
-            f"{report.report_date.day:02d}, {report.report_date.year}"
-        ),
+        "report_date": format_daily_date(report.report_date),
         "author_name": report.author_name or "",
     }
     try:
@@ -728,7 +732,7 @@ async def export_manmonth(db: AsyncSession, month: str) -> bytes:
     for row in sheet.iter_rows(min_row=2):
         for cell in row:
             cell.alignment = Alignment(vertical="top", wrap_text=True)
-        row[1].number_format = "dd mmm yyyy"
+        row[1].number_format = "[$-421]dddd, dd mmmm yyyy"
         row[3].number_format = "0.00"
     sheet.freeze_panes = "A2"
     sheet.auto_filter.ref = sheet.dimensions

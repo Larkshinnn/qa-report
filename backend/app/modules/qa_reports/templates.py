@@ -80,7 +80,8 @@ def validate_body(body: str) -> str:
 
 
 def render_body(body: str, report: Mapping[str, str], activities: list[dict[str, str]]) -> str:
-    body = STANDALONE_BLOCK.sub(r"\1", validate_body(body))
+    body = without_custom_placeholder_bullets(validate_body(body))
+    body = STANDALONE_BLOCK.sub(r"\1", body)
     pieces: list[str] = []
     size = 0
 
@@ -102,3 +103,15 @@ def render_body(body: str, report: Mapping[str, str], activities: list[dict[str,
         cursor = block.end()
     append(fill(body[cursor:], report))
     return "".join(pieces).strip()
+
+
+def without_custom_placeholder_bullets(body: str) -> str:
+    for key in custom_keys(body):
+        token = rf"\{{\{{\s*{re.escape(key)}\s*\}}\}}"
+        body = re.sub(rf"(?m)^([ \t]*)-[ \t]*(?={token})", r"\1", body)
+        body = re.sub(
+            rf"(\{{\{{\s*#activities\s*\}}\}})[ \t]*-[ \t]*(?={token})",
+            r"\1",
+            body,
+        )
+    return body

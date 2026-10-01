@@ -167,7 +167,8 @@ function selectGuidance(value: string): void {
           label="Current issues"
           maxlength="10000"
           :rows="3"
-          hint="Opsional, tanpa mengulang kode tiket. Format Slack: *tebal*, _miring_, `kode`."
+          hint="Tab untuk indentasi; Shift+Tab mengurangi indentasi. Format Slack: *tebal*, _miring_, `kode`."
+          tab-indent
           placeholder="Some results from API are stuck in in progress status / Passed on production"
           @update:model-value="item.current_issue = $event"
         />
@@ -246,7 +247,8 @@ function selectGuidance(value: string): void {
           :label="fieldLabel(field)"
           :rows="3"
           maxlength="10000"
-          hint="Isian untuk aktivitas ini."
+          hint="Isian untuk aktivitas ini. Tab untuk indentasi; Shift+Tab menguranginya."
+          tab-indent
           @update:model-value="updateCustom(field, $event)"
         />
       </div>

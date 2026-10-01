@@ -4,13 +4,21 @@ import { errorMessage } from '../../shared/api'
 import UiBreadcrumbs from '../../shared/components/ui/UiBreadcrumbs.vue'
 import UiCard from '../../shared/components/ui/UiCard.vue'
 import UiErrorState from '../../shared/components/ui/UiErrorState.vue'
-import UiInput from '../../shared/components/ui/UiInput.vue'
+import UiSelect from '../../shared/components/ui/UiSelect.vue'
 import UiButton from '../../shared/components/ui/UiButton.vue'
 import UiSkeleton from '../../shared/components/ui/UiSkeleton.vue'
 import { workspaceApi, type WorkspaceSummary, type WorkspaceUser } from './api'
 import { localDate } from '../qa-reports/api'
 
-const month = ref(localDate().slice(0, 7))
+const today = localDate()
+const selectedMonth = ref(today.slice(5, 7))
+const selectedYear = ref(today.slice(0, 4))
+const month = computed(() => `${selectedYear.value}-${selectedMonth.value}`)
+const months = [
+  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
+].map((label, index) => ({ value: String(index + 1).padStart(2, '0'), label }))
+const years = Array.from({ length: 201 }, (_, index) => String(2100 - index))
 const data = ref<WorkspaceSummary>()
 const loading = ref(false)
 const error = ref('')
@@ -67,15 +75,11 @@ onMounted(load)
     </div>
   </div>
   <form class="month-controls" @submit.prevent="load">
-    <UiInput
-      v-model="month"
-      label="Bulan"
-      type="text"
-      placeholder="YYYY-MM"
-      pattern="(19[0-9]{2}|20[0-9]{2}|2100)-(0[1-9]|1[0-2])"
-      maxlength="7"
-      required
-      hint="Format tahun-bulan, misalnya 2026-09."
+    <UiSelect v-model="selectedMonth" label="Bulan" :options="months" />
+    <UiSelect
+      v-model="selectedYear"
+      label="Tahun"
+      :options="years.map((year) => ({ value: year, label: year }))"
     />
     <UiButton type="submit" variant="secondary" :loading="loading">
       Tampilkan

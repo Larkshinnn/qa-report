@@ -113,12 +113,14 @@ export function renderTemplate(
 ): string {
   body = normalizeTemplate(body)
   if (templateError(body)) return ''
+  body = withoutCustomPlaceholderBullets(body)
   body = body.replace(standaloneBlockPattern, '$1')
   const reportValues = {
     ...values,
     report_title: report.title,
     author_name: report.author_name || '',
     report_date: new Intl.DateTimeFormat('en-US', {
+      weekday: 'long',
       month: 'long',
       day: '2-digit',
       year: 'numeric',
@@ -171,6 +173,19 @@ export function renderTemplate(
   }
   append(fill(body.slice(cursor), reportValues))
   return pieces.join('').trim()
+}
+
+function withoutCustomPlaceholderBullets(body: string): string {
+  for (const key of customKeys(body)) {
+    const token = String.raw`\{\{\s*${key}\s*\}\}`
+    body = body
+      .replace(new RegExp(String.raw`(^|\n)([ \t]*)-[ \t]*(?=${token})`, 'g'), '$1$2')
+      .replace(
+        new RegExp(String.raw`(\{\{\s*#activities\s*\}\})[ \t]*-[ \t]*(?=${token})`, 'g'),
+        '$1',
+      )
+  }
+  return body
 }
 
 export function rememberedTemplate(): string {

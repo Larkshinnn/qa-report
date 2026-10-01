@@ -758,6 +758,8 @@ onUnmounted(() => window.removeEventListener('beforeunload', unload))
               :label="fieldLabel(field)"
               :rows="2"
               maxlength="10000"
+              hint="Tab untuk indentasi list Slack; Shift+Tab mengurangi indentasi."
+              tab-indent
               @update:model-value="templateValues[field] = $event"
             />
           </fieldset>

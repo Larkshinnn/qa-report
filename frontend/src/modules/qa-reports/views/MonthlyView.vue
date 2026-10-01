@@ -20,15 +20,35 @@ const loading = ref(false)
 const exporting = ref(false)
 const exportingManmonth = ref(false)
 const peak = computed(() => Math.max(1, ...(data.value?.trend.map((day) => day.count) ?? [])))
-const csvColumns: { key: keyof CsvPreviewRow; label: string }[] = [
+type ManmonthPreviewRow = CsvPreviewRow & { number: number; day: string }
+const manmonthRows = computed(() =>
+  csvRows.value.map((row, index) => ({
+    ...row,
+    number: index + 1,
+    date: new Intl.DateTimeFormat('id-ID', {
+      weekday: 'long',
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+    }).format(new Date(`${row.date}T12:00:00`)),
+    day: new Intl.DateTimeFormat('id-ID', { weekday: 'long' }).format(
+      new Date(`${row.date}T12:00:00`),
+    ),
+  })),
+)
+const manmonthColumns: { key: keyof ManmonthPreviewRow & string; label: string }[] = [
+  { key: 'number', label: 'No' },
   { key: 'date', label: 'Tanggal' },
-  { key: 'title', label: 'Laporan' },
-  { key: 'activity', label: 'Aktivitas' },
-  { key: 'environment', label: 'Environment' },
-  { key: 'result', label: 'Hasil' },
-  { key: 'current_status', label: 'Status saat ini' },
-  { key: 'current_issue', label: 'Issue saat ini' },
-  { key: 'coverage_links', label: 'Coverage links' },
+  { key: 'day', label: 'Hari' },
+  { key: 'duration_hours', label: 'Durasi Pengerjaan (Hour)' },
+  { key: 'activity', label: 'Ticket / Task Ref' },
+  { key: 'current_issue', label: 'Task Summary (Progress)' },
+  { key: 'obstacle', label: 'Kendala (Obstacle)' },
+  { key: 'next_step', label: 'Next Step / Action' },
+  { key: 'pic_guidance', label: 'PIC / Guidance' },
+  { key: 'coverage_links', label: 'Notion / Reference Link' },
+  { key: 'deliverable', label: 'Deliverable' },
+  { key: 'current_status', label: 'Status' },
 ]
 let request = 0
 async function load(): Promise<void> {
@@ -279,15 +299,15 @@ onMounted(load)
       <UiCard padding="md">
         <div class="section-heading">
           <div>
-            <h2>Preview CSV</h2>
-            <p>Data diurutkan dari tanggal paling awal ke paling akhir dalam bulan terpilih.</p>
+            <h2>Preview manmonth</h2>
+            <p>Pratinjau mengikuti kolom pada file ekspor manmonth.</p>
           </div>
         </div>
         <UiDataTable
-          :rows="csvRows"
-          :columns="csvColumns"
+          :rows="manmonthRows"
+          :columns="manmonthColumns"
           row-key="row_id"
-          caption="Preview isi CSV laporan bulanan"
+          caption="Preview isi laporan manmonth bulanan"
           :page-size="10"
         >
           <template #cell-current_issue="{ value }">
