@@ -1,4 +1,4 @@
-import type { ItemInput, ReportMetadata } from './api'
+import { safeCoverageUrl, type ItemInput, type ReportMetadata } from './api'
 
 export const templateTokens = [
   ['report_title', 'Judul laporan', 1],
@@ -24,16 +24,16 @@ export const starterBody = `{{report_title}}
 Date: {{report_date}}
 
 Testing Summary:
-{{#activities}}- {{activity_code}} · {{environment}} · {{result}}
+{{#activities}}{{activity_code}} · {{environment}} · {{result}}
 {{/activities}}
 Test Coverage:
-{{#activities}}- {{activity_code}}: {{coverage_links}}
+{{#activities}}{{activity_code}}: {{coverage_links}}
 {{/activities}}
 Current issues:
-{{#activities}}- {{activity_code}}: {{current_issue}}
+{{#activities}}{{activity_code}}: {{current_issue}}
 {{/activities}}
 Current Status:
-{{#activities}}- {{activity_code}}: {{current_status}}
+{{#activities}}{{activity_code}}: {{current_status}}
 {{/activities}}`
 
 export function normalizeTemplate(body: string): string {
@@ -120,7 +120,7 @@ export function renderTemplate(
     author_name: report.author_name || '',
     report_date: new Intl.DateTimeFormat('en-US', {
       month: 'long',
-      day: 'numeric',
+      day: '2-digit',
       year: 'numeric',
     }).format(new Date(`${report.report_date}T12:00:00`)),
   }
@@ -153,7 +153,17 @@ export function renderTemplate(
           result: item.result,
           current_status: item.current_status || item.result,
           current_issue: item.current_issue || '',
-          coverage_links: item.links.map((link) => link.url).join('\n'),
+          coverage_links: item.links
+            .filter((link) => link.url)
+            .map(({ label, url }) => {
+              if (!safeCoverageUrl(url)) return url
+              const title = (label?.trim() || url)
+                .replaceAll('\\', '\\\\')
+                .replaceAll('[', '\\[')
+                .replaceAll(']', '\\]')
+              return `[${title}](${url.replaceAll('(', '\\(').replaceAll(')', '\\)')})`
+            })
+            .join(', '),
         }),
       )
     }

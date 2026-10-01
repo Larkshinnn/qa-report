@@ -50,7 +50,7 @@ async function toggleVisibility(user: WorkspaceUser): Promise<void> {
 }
 
 function dateLabel(value: string): string {
-  return new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short' }).format(
+  return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short' }).format(
     new Date(`${value}T12:00:00`),
   )
 }
@@ -67,7 +67,16 @@ onMounted(load)
     </div>
   </div>
   <form class="month-controls" @submit.prevent="load">
-    <UiInput v-model="month" label="Bulan" type="month" required min="1900-01" max="2100-12" />
+    <UiInput
+      v-model="month"
+      label="Bulan"
+      type="text"
+      placeholder="YYYY-MM"
+      pattern="(19[0-9]{2}|20[0-9]{2}|2100)-(0[1-9]|1[0-2])"
+      maxlength="7"
+      required
+      hint="Format tahun-bulan, misalnya 2026-09."
+    />
     <UiButton type="submit" variant="secondary" :loading="loading">
       Tampilkan
     </UiButton>

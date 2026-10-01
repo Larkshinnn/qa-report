@@ -285,7 +285,7 @@ onUnmounted(() => {
                 <UiButton
                   variant="secondary"
                   size="sm"
-                  @click="insert('{{#activities}}\n- {{activity_code}}\n{{/activities}}')"
+                  @click="insert('{{#activities}}\n{{activity_code}}\n{{/activities}}')"
                 >
                   Blok aktivitas
                 </UiButton>

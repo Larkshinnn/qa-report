@@ -211,6 +211,14 @@ function selectGuidance(value: string): void {
             class="coverage-row"
           >
             <UiInput
+              :model-value="link.label ?? ''"
+              :label="`Judul link ${linkIndex + 1}`"
+              maxlength="255"
+              placeholder="Contoh: Test case pembayaran"
+              hint="Kosongkan untuk memakai URL sebagai judul."
+              @update:model-value="link.label = $event || null"
+            />
+            <UiInput
               v-model="link.url"
               :label="`URL coverage ${linkIndex + 1}`"
               maxlength="4096"
@@ -356,7 +364,7 @@ legend {
 }
 .coverage-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
   gap: 12px;
   align-items: start;
 }

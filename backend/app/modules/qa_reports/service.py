@@ -377,7 +377,7 @@ def generate_preview(report: DailyReport) -> Preview:
     if not report.items:
         raise AppError(422, "Tambahkan aktivitas untuk membuat preview laporan.")
     formatted_date = (
-        f"{report.report_date.strftime('%B')} {report.report_date.day}, {report.report_date.year}"
+        f"{report.report_date.strftime('%B')} {report.report_date.day:02d}, {report.report_date.year}"
     )
     sections: list[tuple[str, list[str]]] = [
         (
@@ -389,7 +389,8 @@ def generate_preview(report: DailyReport) -> Preview:
         )
     ]
     coverage = [
-        f"Activity: {i.activity_code}\n" + "\n".join(link.url for link in i.links)
+        f"Activity: {i.activity_code}\n"
+        + ", ".join(format_coverage_link(link.label, link.url) for link in i.links)
         for i in report.items
         if i.links
     ]
@@ -407,11 +408,11 @@ def generate_preview(report: DailyReport) -> Preview:
     for heading, entries in sections:
         # Continuation lines stay grouped under their activity, including multiline notes.
         indented = [entry.replace("\n", "\n  ") for entry in entries]
-        content = "\n".join(f"- {entry}" for entry in indented)
+        content = "\n".join(indented)
         blocks.append(f"{heading}\n{content}")
         markdown_blocks.append(f"## {heading}\n\n" + content.replace("\n", "  \n"))
         slack_blocks.append(
-            f"*{heading}*\n" + "\n".join(f"• {escape(entry, quote=False)}" for entry in indented)
+            f"*{heading}*\n" + "\n".join(escape(entry, quote=False) for entry in indented)
         )
     plain = "\n\n".join(blocks)
     # HTML contains escaped text only, never user-supplied markup.
@@ -430,6 +431,23 @@ def generate_preview(report: DailyReport) -> Preview:
     )
 
 
+def format_coverage_link(label: str | None, url: str) -> str:
+    from urllib.parse import urlsplit
+
+    parsed = urlsplit(url)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+    ):
+        return url
+    title = (label or "").strip() or url
+    title = title.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
+    target = url.replace("(", "\\(").replace(")", "\\)")
+    return f"[{title}]({target})"
+
+
 def generate_template_preview(report: DailyReport) -> Preview:
     """Render the saved template snapshot with report and activity values."""
     assert report.template_body is not None
@@ -440,7 +458,9 @@ def generate_template_preview(report: DailyReport) -> Preview:
             "activity_code": item.activity_code,
             "environment": item.environment,
             "result": item.result,
-            "coverage_links": "\n".join(link.url for link in item.links),
+            "coverage_links": ", ".join(
+                format_coverage_link(link.label, link.url) for link in item.links if link.url
+            ),
             "current_issue": item.current_issue or "",
             "current_status": item.current_status or item.result,
         }
@@ -451,7 +471,7 @@ def generate_template_preview(report: DailyReport) -> Preview:
         "report_title": report.title,
         "report_date": (
             f"{report.report_date.strftime('%B')} "
-            f"{report.report_date.day}, {report.report_date.year}"
+            f"{report.report_date.day:02d}, {report.report_date.year}"
         ),
         "author_name": report.author_name or "",
     }
