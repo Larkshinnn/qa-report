@@ -9,7 +9,7 @@ from uuid import UUID
 # openpyxl does not ship type hints.
 from openpyxl import Workbook  # type: ignore[import-untyped]
 from openpyxl.styles import Alignment, Font, PatternFill  # type: ignore[import-untyped]
-from sqlalchemy import distinct, func, select, tuple_
+from sqlalchemy import distinct, func, select, tuple_, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -139,6 +139,19 @@ async def update_template(
         body.name,
         body.description,
         normalize_body(body.body),
+    )
+    await db.execute(
+        update(DailyReport)
+        .where(
+            DailyReport.template_id == template.id,
+            DailyReport.account_id == template.account_id,
+        )
+        .values(
+            template_name=template.name,
+            template_body=template.body,
+            version=DailyReport.version + 1,
+            updated_at=func.now(),
+        )
     )
     try:
         await db.commit()
