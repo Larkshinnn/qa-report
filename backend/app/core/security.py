@@ -44,15 +44,34 @@ def read_cookie(cookie: str | None) -> str | None:
         return None
 
 
-def sign_state(state: str) -> str:
-    return signer().dumps({"state": state, "kind": "google-oauth"})
+def sign_state(state: str, subject: str | None = None) -> str:
+    payload = {"state": state, "kind": "google-oauth"}
+    if subject:
+        payload["subject"] = subject
+    return signer().dumps(payload)
 
 
-def read_state(value: str | None) -> str | None:
+def _read_state_payload(value: str | None) -> dict[str, object] | None:
     if not value:
         return None
     try:
         payload = signer().loads(value, max_age=STATE_SECONDS)
-        return payload.get("state") if isinstance(payload, dict) else None
+        return (
+            payload
+            if isinstance(payload, dict) and payload.get("kind") == "google-oauth"
+            else None
+        )
     except (BadSignature, AttributeError):
         return None
+
+
+def read_state(value: str | None) -> str | None:
+    payload = _read_state_payload(value)
+    state = payload.get("state") if payload else None
+    return state if isinstance(state, str) else None
+
+
+def read_state_subject(value: str | None) -> str | None:
+    payload = _read_state_payload(value)
+    subject = payload.get("subject") if payload else None
+    return subject if isinstance(subject, str) else None

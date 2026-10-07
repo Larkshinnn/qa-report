@@ -2,22 +2,29 @@ import secrets
 from datetime import UTC, datetime
 from typing import Annotated, Literal
 from urllib.parse import urlencode
+from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import User, require_user
+from app.core.auth import User
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.errors import AppError
-from app.core.models import YouTubeConnection
-from app.core.security import decrypt_secret, encrypt_secret, read_state, sign_state
+from app.core.models import Account, YouTubeConnection
+from app.core.security import (
+    decrypt_secret,
+    encrypt_secret,
+    read_state,
+    read_state_subject,
+    sign_state,
+)
 
-router = APIRouter(prefix="/api/youtube", tags=["youtube"], dependencies=[Depends(require_user)])
+router = APIRouter(prefix="/api/youtube", tags=["youtube"])
 Db = Annotated[AsyncSession, Depends(get_db)]
 STATE_COOKIE = "qa_report_youtube_state"
 UPLOAD_SCOPE = "https://www.googleapis.com/auth/youtube.upload"
@@ -109,7 +116,7 @@ async def connect(user: User) -> RedirectResponse:
         raise AppError(503, "Google OAuth belum dikonfigurasi di backend.")
     if not settings.youtube_redirect_uri:
         raise AppError(503, "YOUTUBE_REDIRECT_URI belum dikonfigurasi di backend.")
-    state = secrets.token_urlsafe(32)
+    state = sign_state(secrets.token_urlsafe(32), str(user.id))
     query = urlencode(
         {
             "client_id": settings.google_client_id,
@@ -122,36 +129,29 @@ async def connect(user: User) -> RedirectResponse:
             "include_granted_scopes": "true",
         }
     )
-    response = RedirectResponse(
+    return RedirectResponse(
         f"https://accounts.google.com/o/oauth2/v2/auth?{query}", status_code=302
     )
-    response.set_cookie(
-        STATE_COOKIE,
-        sign_state(state),
-        max_age=600,
-        httponly=True,
-        secure=settings.cookie_secure,
-        samesite="lax",
-        path="/api/youtube/callback",
-    )
-    return response
 
 
 @router.get("/callback")
 async def callback(
-    request: Request,
-    user: User,
     db: Db,
     code: str | None = Query(default=None),
     state: str | None = Query(default=None),
     error: str | None = Query(default=None),
 ) -> RedirectResponse:
     settings = get_settings()
-    saved_state = read_state(request.cookies.get(STATE_COOKIE))
-    if not is_admin(user):
-        raise AppError(403, "Hanya admin yang dapat menghubungkan channel YouTube bersama.")
-    if error or not code or not state or not secrets.compare_digest(state, saved_state or ""):
+    if error or not code or not read_state(state):
         raise AppError(400, "Koneksi YouTube dibatalkan atau tidak valid.")
+    try:
+        initiator_id = UUID(read_state_subject(state) or "")
+    except ValueError:
+        raise AppError(400, "Koneksi YouTube dibatalkan atau tidak valid.") from None
+    initiator = await db.get(Account, initiator_id)
+    if initiator is None or not is_admin(initiator):
+        raise AppError(400, "Koneksi YouTube dibatalkan atau tidak valid.")
+    initiator_email = initiator.email
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             token_response = await client.post(
@@ -200,7 +200,7 @@ async def callback(
             uploads_playlist_id=uploads_playlist_id,
             channel_title=channel["snippet"]["title"],
             refresh_token_encrypted=encrypt_secret(refresh),
-            connected_by=user.email,
+            connected_by=initiator_email,
         )
         db.add(current)
     else:
@@ -208,7 +208,7 @@ async def callback(
         current.uploads_playlist_id = uploads_playlist_id
         current.channel_title = channel["snippet"]["title"]
         current.refresh_token_encrypted = encrypt_secret(refresh)
-        current.connected_by = user.email
+        current.connected_by = initiator_email
         current.connected_at = datetime.now(UTC)
     await db.commit()
     response = RedirectResponse(f"{settings.allowed_origins.split(',')[0].rstrip('/')}/youtube?connected=1")
@@ -228,6 +228,7 @@ async def disconnect(user: User, db: Db) -> None:
 
 @router.get("/videos")
 async def videos(
+    _user: User,
     db: Db,
     page_token: str | None = None,
 ) -> VideoPage:
@@ -276,6 +277,7 @@ async def videos(
 
 @router.post("/videos", status_code=201)
 async def upload_video(
+    _user: User,
     db: Db,
     video: Annotated[UploadFile, File()],
     title: Annotated[str, Form(min_length=1, max_length=100)],
