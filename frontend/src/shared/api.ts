@@ -41,7 +41,7 @@ async function response(path: string, options: RequestInit = {}): Promise<Respon
       typeof body.existing_id === 'string'
         ? body.existing_id
         : undefined
-    if (result.status === 401 && !path.startsWith('/auth/')) {
+    if (result.status === 401 && detail === 'Sesi berakhir. Masuk kembali untuk melanjutkan.') {
       window.dispatchEvent(new Event('qa:session-expired'))
     }
     throw new ApiError(detail, result.status, existingId)

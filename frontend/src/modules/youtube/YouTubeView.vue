@@ -37,6 +37,9 @@ const error = ref('')
 const fileError = ref('')
 const connected = computed(() => status.value?.connected ?? false)
 const canConnect = computed(() => status.value?.can_connect ?? false)
+const connectionExpired = computed(() =>
+  error.value.startsWith('Koneksi YouTube kedaluwarsa.'),
+)
 const maxVideoBytes = 512 * 1024 * 1024
 
 function connect(): void {
@@ -212,9 +215,12 @@ onMounted(async () => {
       <p>Kelola konten pada satu channel bersama. Semua anggota dapat melihat dan mengunggah video.</p>
     </div>
   </div>
-  <UiErrorState v-if="error" :message="error" retryable @retry="load" />
+  <div v-if="error" class="youtube-error">
+    <UiErrorState :message="error" retryable @retry="load" />
+    <UiButton v-if="connectionExpired && canConnect" @click="connect">Hubungkan ulang channel</UiButton>
+  </div>
   <UiSkeleton v-else-if="!status || loading" :lines="4" />
-  <template v-else>
+  <template v-if="status && (error || !loading)">
     <UiCard padding="md" class="connection-card">
       <div class="connection-copy">
         <template v-if="connected">
@@ -228,6 +234,7 @@ onMounted(async () => {
       </div>
       <div class="button-row">
         <UiButton v-if="!connected && canConnect" @click="connect">Hubungkan channel</UiButton>
+        <UiButton v-if="connected && canConnect" @click="connect">Hubungkan ulang</UiButton>
         <UiButton v-if="connected && canConnect" variant="secondary" @click="disconnect">Lepas koneksi</UiButton>
       </div>
     </UiCard>
@@ -303,8 +310,7 @@ onMounted(async () => {
           <UiButton variant="secondary" :loading="loading" @click="loadVideos(pageTokens[pageIndex])">Muat ulang</UiButton>
         </div>
         <UiSkeleton v-if="loading" :lines="3" />
-        <UiErrorState v-else-if="error" :message="error" retryable @retry="loadVideos(pageTokens[pageIndex])" />
-        <UiCard v-else-if="!videos.length" padding="md"><p>Belum ada video di channel ini.</p></UiCard>
+        <UiCard v-else-if="!error && !videos.length" padding="md"><p>Belum ada video di channel ini.</p></UiCard>
         <div v-else class="video-list">
           <UiCard v-for="video in videos" :key="video.video_id" padding="md" class="video-row">
             <img v-if="video.thumbnail_url" :src="video.thumbnail_url" :alt="`Thumbnail ${video.title}`" />
@@ -326,6 +332,7 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.youtube-error { display:flex; align-items:center; flex-wrap:wrap; gap:12px; }
 .connection-card,.section-heading,.connection-copy,.button-row,.pagination { display:flex; align-items:center; justify-content:space-between; gap:14px; }
 .connection-copy { align-items:flex-start; flex-direction:column; }
 .upload-card,.content-section { margin-top:28px; }
