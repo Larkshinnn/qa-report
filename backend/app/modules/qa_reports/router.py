@@ -12,6 +12,7 @@ from app.modules.qa_reports.workspace import workspace_summary
 from app.modules.qa_reports.schemas import (
     CsvPreviewRow,
     DeliveryOptions,
+    ManmonthRowUpdate,
     MonthlyMetrics,
     Preview,
     ReportDraftCreate,
@@ -139,6 +140,13 @@ async def csv_preview(
     db: OwnedDb, month: Annotated[str, Query(pattern=r"^\d{4}-\d{2}$")]
 ) -> list[CsvPreviewRow]:
     return await service.monthly_csv_rows(db, month)
+
+
+@router.put("/{report_id}/items/{item_id}")
+async def update_manmonth_row(
+    report_id: UUID, item_id: UUID, body: ManmonthRowUpdate, db: OwnedDb
+) -> CsvPreviewRow:
+    return await service.update_manmonth_row(db, report_id, item_id, body)
 
 
 @router.get("/monthly.manmonth.xlsx")

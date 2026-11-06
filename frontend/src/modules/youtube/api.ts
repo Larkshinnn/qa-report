@@ -8,6 +8,8 @@ export interface YouTubeStatus {
   can_connect: boolean
 }
 
+export type PrivacyStatus = 'private' | 'unlisted' | 'public'
+
 export interface YouTubeVideo {
   video_id: string
   title: string
@@ -17,16 +19,28 @@ export interface YouTubeVideo {
   privacy_status: string
 }
 
-export interface YouTubeVideoPage {
+export interface YouTubeVideoList {
   videos: YouTubeVideo[]
-  next_page_token: string | null
+  truncated: boolean
+}
+
+export interface YouTubeVideoUpdate {
+  title: string
+  description: string
+  privacy_status: PrivacyStatus
 }
 
 export const youtubeApi = {
   status: (): Promise<YouTubeStatus> => api('/youtube/status'),
-  videos: (pageToken?: string): Promise<YouTubeVideoPage> =>
-    api(`/youtube/videos${pageToken ? `?${new URLSearchParams({ page_token: pageToken })}` : ''}`),
+  videos: (): Promise<YouTubeVideoList> => api('/youtube/videos'),
   upload: (form: FormData): Promise<{ video_id: string; url: string }> =>
     api('/youtube/videos', { method: 'POST', body: form }),
+  update: (videoId: string, body: YouTubeVideoUpdate): Promise<YouTubeVideo> =>
+    api(`/youtube/videos/${encodeURIComponent(videoId)}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+  remove: (videoId: string): Promise<void> =>
+    api(`/youtube/videos/${encodeURIComponent(videoId)}`, { method: 'DELETE' }),
   disconnect: (): Promise<void> => api('/youtube/connection', { method: 'DELETE' }),
 }

@@ -248,3 +248,18 @@ class CsvPreviewRow(Schema):
     next_step: str
     pic_guidance: str
     deliverable: str
+    editable: bool = True
+
+
+class ManmonthRowUpdate(Schema):
+    activity_code: str = Field(default="", max_length=100)
+    current_status: str | None = Field(default=None, max_length=100)
+    current_issue: str | None = Field(default=None, max_length=10000)
+    duration_hours: float | None = Field(default=None, ge=0)
+    obstacle: str | None = Field(default=None, max_length=10000)
+    next_step: str | None = Field(default=None, max_length=10000)
+    pic_guidance: str | None = Field(default=None, max_length=10000)
+    deliverable: str | None = Field(default=None, max_length=10000)
+    links: list[Annotated[str, Field(min_length=1, max_length=4096)]] = Field(
+        default_factory=list, max_length=50
+    )

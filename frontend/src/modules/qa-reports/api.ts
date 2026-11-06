@@ -116,6 +116,18 @@ export interface CsvPreviewRow {
   next_step: string
   pic_guidance: string
   deliverable: string
+  editable: boolean
+}
+export interface ManmonthRowUpdate {
+  activity_code: string
+  current_status: string | null
+  current_issue: string | null
+  duration_hours: number | null
+  obstacle: string | null
+  next_step: string | null
+  pic_guidance: string | null
+  deliverable: string | null
+  links: string[]
 }
 const base = '/qa-reports'
 export const qaApi = {
@@ -171,6 +183,11 @@ export const qaApi = {
     apiFile(`${base}/monthly.manmonth.xlsx?${new URLSearchParams({ month })}`),
   csvRows: (month: string): Promise<CsvPreviewRow[]> =>
     api(`${base}/monthly/rows?${new URLSearchParams({ month })}`),
+  updateRow: (reportId: string, itemId: string, body: ManmonthRowUpdate): Promise<CsvPreviewRow> =>
+    api(`${base}/${encodeURIComponent(reportId)}/items/${encodeURIComponent(itemId)}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
   deliveryOptions: (): Promise<{ slack: boolean; email: boolean }> =>
     api(`${base}/delivery-options`),
   send: (

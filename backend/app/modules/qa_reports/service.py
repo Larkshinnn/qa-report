@@ -21,6 +21,7 @@ from app.modules.qa_reports.schemas import (
     CsvPreviewRow,
     DayCount,
     ItemInput,
+    ManmonthRowUpdate,
     MonthlyMetrics,
     Preview,
     ReportDraftCreate,
@@ -636,26 +637,56 @@ async def monthly_csv_rows(db: AsyncSession, month: str) -> list[CsvPreviewRow]:
             .order_by(DailyReport.report_date.asc(), DailyReport.id)
         )
     ).all()
-    return [
-        CsvPreviewRow(
-            row_id=f"{report.id}:{item.id}",
-            date=report.report_date,
-            title=report.title,
-            activity=item.activity_code,
-            environment=item.environment,
-            result=item.result,
-            current_status=item.current_status or "",
-            current_issue=item.current_issue or "",
-            coverage_links="\n".join(link.url for link in item.links),
-            duration_hours=item.duration_hours,
-            obstacle=item.obstacle or "",
-            next_step=item.next_step or "",
-            pic_guidance=item.pic_guidance or "",
-            deliverable=item.deliverable or "",
-        )
-        for report in reports
-        for item in report.items
-    ]
+    return [csv_row(report, item) for report in reports for item in report.items]
+
+
+def csv_row(report: DailyReport, item: ReportItem) -> CsvPreviewRow:
+    return CsvPreviewRow(
+        row_id=f"{report.id}:{item.id}",
+        date=report.report_date,
+        title=report.title,
+        activity=item.activity_code,
+        environment=item.environment,
+        result=item.result,
+        current_status=item.current_status or "",
+        current_issue=item.current_issue or "",
+        coverage_links="\n".join(link.url for link in item.links),
+        duration_hours=item.duration_hours,
+        obstacle=item.obstacle or "",
+        next_step=item.next_step or "",
+        pic_guidance=item.pic_guidance or "",
+        deliverable=item.deliverable or "",
+        editable=report.status == "draft",
+    )
+
+
+async def update_manmonth_row(
+    db: AsyncSession, report_id: UUID, item_id: UUID, body: ManmonthRowUpdate
+) -> CsvPreviewRow:
+    report = await get_report(db, report_id, lock=True)
+    if report.status != "draft":
+        raise AppError(409, "Laporan sudah dikunci dan tidak dapat diedit.")
+    item = next((entry for entry in report.items if entry.id == item_id), None)
+    if item is None:
+        raise AppError(404, "Aktivitas tidak ditemukan.")
+    fields = activity_keys(report.template_body) if report.template_body else list(ACTIVITY_KEYS)
+    if "activity_code" in fields and not body.activity_code:
+        raise AppError(422, "Ticket / Task Ref wajib diisi.")
+    item.activity_code = body.activity_code
+    item.current_status = body.current_status or item.result
+    item.current_issue = body.current_issue or None
+    item.duration_hours = body.duration_hours
+    item.obstacle = body.obstacle or None
+    item.next_step = body.next_step or None
+    item.pic_guidance = body.pic_guidance or None
+    item.deliverable = body.deliverable or None
+    labels = {link.url: link.label for link in item.links}
+    urls = list(dict.fromkeys(body.links))
+    if urls != [link.url for link in item.links]:
+        item.links = [ReportItemLink(url=url, label=labels.get(url)) for url in urls]
+    report.version += 1
+    await db.commit()
+    return csv_row(report, item)
 
 
 async def export_csv(db: AsyncSession, month: str) -> str:

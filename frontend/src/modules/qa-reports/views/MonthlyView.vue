@@ -1,7 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { qaApi, localDate, type CsvPreviewRow, type Metrics } from '../api'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { qaApi, localDate, safeCoverageUrl, type CsvPreviewRow, type Metrics } from '../api'
 import { downloadFile, errorMessage } from '../../../shared/api'
+import { useToast } from '../../../shared/composables/useToast'
+import UiModal from '../../../shared/components/ui/UiModal.vue'
+import UiTextarea from '../../../shared/components/ui/UiTextarea.vue'
 import UiButton from '../../../shared/components/ui/UiButton.vue'
 import UiBreadcrumbs from '../../../shared/components/ui/UiBreadcrumbs.vue'
 import UiInput from '../../../shared/components/ui/UiInput.vue'
@@ -20,10 +23,11 @@ const loading = ref(false)
 const exporting = ref(false)
 const exportingManmonth = ref(false)
 const peak = computed(() => Math.max(1, ...(data.value?.trend.map((day) => day.count) ?? [])))
-type ManmonthPreviewRow = CsvPreviewRow & { number: number; day: string }
-const manmonthRows = computed(() =>
+type ManmonthPreviewRow = CsvPreviewRow & { number: number; day: string; actions: string }
+const manmonthRows = computed<ManmonthPreviewRow[]>(() =>
   csvRows.value.map((row, index) => ({
     ...row,
+    actions: '',
     number: index + 1,
     date: new Intl.DateTimeFormat('id-ID', {
       weekday: 'long',
@@ -49,7 +53,136 @@ const manmonthColumns: { key: keyof ManmonthPreviewRow & string; label: string }
   { key: 'coverage_links', label: 'Notion / Reference Link' },
   { key: 'deliverable', label: 'Deliverable' },
   { key: 'current_status', label: 'Status' },
+  { key: 'actions', label: 'Aksi' },
 ]
+type LongColumn =
+  | 'activity'
+  | 'current_issue'
+  | 'obstacle'
+  | 'next_step'
+  | 'pic_guidance'
+  | 'coverage_links'
+  | 'deliverable'
+  | 'current_status'
+const longColumnKeys: LongColumn[] = [
+  'activity',
+  'current_issue',
+  'obstacle',
+  'next_step',
+  'pic_guidance',
+  'coverage_links',
+  'deliverable',
+  'current_status',
+]
+const longColumns = manmonthColumns.filter((column): column is { key: LongColumn; label: string } =>
+  (longColumnKeys as string[]).includes(column.key),
+)
+const LONG_CHARS = 120
+const LONG_LINES = 3
+function isLong(value: unknown): boolean {
+  const text = String(value ?? '')
+  return text.length > LONG_CHARS || text.split('\n').length > LONG_LINES
+}
+
+const { notify } = useToast()
+const detail = ref<{ label: string; date: string; key: string; value: string }>()
+const detailOpen = ref(false)
+function showDetail(label: string, key: string, row: ManmonthPreviewRow): void {
+  detail.value = { label, key, date: row.date, value: String(row[key as LongColumn] ?? '') }
+  detailOpen.value = true
+}
+
+const editRow = ref<CsvPreviewRow>()
+const editOpen = ref(false)
+const saving = ref(false)
+const editError = ref('')
+const editForm = reactive({
+  activity_code: '',
+  duration_hours: '',
+  current_issue: '',
+  obstacle: '',
+  next_step: '',
+  pic_guidance: '',
+  links: '',
+  deliverable: '',
+  current_status: '',
+})
+const editDateLabel = computed(() =>
+  editRow.value
+    ? new Intl.DateTimeFormat('id-ID', { dateStyle: 'full' }).format(
+        new Date(`${editRow.value.date}T12:00:00`),
+      )
+    : '',
+)
+function openEdit(rowId: string): void {
+  const row = csvRows.value.find((entry) => entry.row_id === rowId)
+  if (!row || !row.editable) return
+  editRow.value = row
+  Object.assign(editForm, {
+    activity_code: row.activity,
+    duration_hours: row.duration_hours?.toString() ?? '',
+    current_issue: row.current_issue,
+    obstacle: row.obstacle,
+    next_step: row.next_step,
+    pic_guidance: row.pic_guidance,
+    links: row.coverage_links,
+    deliverable: row.deliverable,
+    current_status: row.current_status,
+  })
+  editError.value = ''
+  editOpen.value = true
+}
+async function saveEdit(): Promise<void> {
+  const row = editRow.value
+  if (!row || saving.value) return
+  const [reportId, itemId] = row.row_id.split(':')
+  const links = editForm.links
+    .split('\n')
+    .map((link) => link.trim())
+    .filter(Boolean)
+  const invalid = links.find((link) => !safeCoverageUrl(link))
+  if (invalid) {
+    editError.value = `Link tidak valid: ${invalid}. Gunakan URL http(s) lengkap, satu per baris.`
+    return
+  }
+  const duration = editForm.duration_hours.trim() === '' ? null : Number(editForm.duration_hours)
+  if (duration !== null && (!Number.isFinite(duration) || duration < 0)) {
+    editError.value = 'Durasi harus berupa angka 0 atau lebih.'
+    return
+  }
+  if (!reportId || !itemId) return
+  saving.value = true
+  editError.value = ''
+  try {
+    const updated = await qaApi.updateRow(reportId, itemId, {
+      activity_code: editForm.activity_code.trim(),
+      duration_hours: duration,
+      current_issue: editForm.current_issue || null,
+      obstacle: editForm.obstacle || null,
+      next_step: editForm.next_step || null,
+      pic_guidance: editForm.pic_guidance || null,
+      deliverable: editForm.deliverable || null,
+      current_status: editForm.current_status.trim() || null,
+      links,
+    })
+    csvRows.value = csvRows.value.map((entry) => (entry.row_id === updated.row_id ? updated : entry))
+    editOpen.value = false
+    notify('Baris manmonth diperbarui.')
+    if (data.value) {
+      const month = data.value.month
+      qaApi
+        .metrics(month)
+        .then((result) => {
+          if (data.value?.month === month) data.value = result
+        })
+        .catch(() => undefined)
+    }
+  } catch (cause) {
+    editError.value = errorMessage(cause)
+  } finally {
+    saving.value = false
+  }
+}
 let request = 0
 async function load(): Promise<void> {
   const current = ++request
@@ -310,14 +443,159 @@ onMounted(load)
           caption="Preview isi laporan manmonth bulanan"
           :page-size="10"
         >
-          <template #cell-current_issue="{ value }">
-            <span class="csv-preview-cell">{{ value || '—' }}</span>
+          <template
+            v-for="column in longColumns"
+            :key="column.key"
+            #[`cell-${column.key}`]="{ row, value }"
+          >
+            <div class="clamp-cell">
+              <span :class="{ clamped: isLong(value) }">{{ value || '—' }}</span>
+              <button
+                v-if="isLong(value)"
+                type="button"
+                class="view-more"
+                @click="showDetail(column.label, column.key, row)"
+              >
+                Lihat selengkapnya
+              </button>
+            </div>
           </template>
-          <template #cell-coverage_links="{ value }">
-            <span class="csv-preview-cell">{{ value || '—' }}</span>
+          <template #cell-actions="{ row }">
+            <UiButton
+              size="sm"
+              variant="secondary"
+              :disabled="!row.editable"
+              :title="row.editable ? undefined : 'Laporan sudah dikunci dan tidak dapat diedit'"
+              @click="openEdit(row.row_id)"
+            >
+              Edit
+            </UiButton>
           </template>
         </UiDataTable>
       </UiCard>
+      <UiModal
+        v-model="detailOpen"
+        :title="detail?.label ?? ''"
+        :description="detail?.date"
+        size="lg"
+      >
+        <div
+          v-if="detail?.key === 'coverage_links'"
+          class="detail-body"
+        >
+          <template
+            v-for="(link, index) in detail.value.split('\n')"
+            :key="index"
+          >
+            <a
+              v-if="safeCoverageUrl(link)"
+              :href="link"
+              target="_blank"
+              rel="noopener noreferrer"
+            >{{ link }}</a>
+            <span v-else>{{ link }}</span>
+          </template>
+        </div>
+        <p
+          v-else
+          class="detail-body"
+        >
+          {{ detail?.value }}
+        </p>
+      </UiModal>
+      <UiModal
+        v-model="editOpen"
+        title="Edit baris manmonth"
+        :description="editDateLabel"
+        size="lg"
+        :dismissible="!saving"
+      >
+        <form
+          id="manmonth-row-form"
+          class="edit-row-form"
+          @submit.prevent="saveEdit"
+        >
+          <div class="edit-row-pair">
+            <UiInput
+              v-model="editForm.activity_code"
+              label="Ticket / Task Ref"
+              maxlength="100"
+            />
+            <UiInput
+              v-model="editForm.duration_hours"
+              label="Durasi Pengerjaan (Hour)"
+              type="number"
+              min="0"
+              step="0.25"
+            />
+          </div>
+          <UiTextarea
+            v-model="editForm.current_issue"
+            label="Task Summary (Progress)"
+            :rows="4"
+            maxlength="10000"
+          />
+          <UiTextarea
+            v-model="editForm.obstacle"
+            label="Kendala (Obstacle)"
+            :rows="2"
+            maxlength="10000"
+          />
+          <UiTextarea
+            v-model="editForm.next_step"
+            label="Next Step / Action"
+            :rows="2"
+            maxlength="10000"
+          />
+          <UiTextarea
+            v-model="editForm.pic_guidance"
+            label="PIC / Guidance"
+            :rows="2"
+            maxlength="10000"
+          />
+          <UiTextarea
+            v-model="editForm.links"
+            label="Notion / Reference Link"
+            hint="Satu URL per baris."
+            :rows="3"
+          />
+          <UiTextarea
+            v-model="editForm.deliverable"
+            label="Deliverable"
+            :rows="2"
+            maxlength="10000"
+          />
+          <UiInput
+            v-model="editForm.current_status"
+            label="Status"
+            maxlength="100"
+            hint="Kosongkan untuk mengikuti hasil pengujian."
+          />
+          <p
+            v-if="editError"
+            class="field-error"
+            role="alert"
+          >
+            {{ editError }}
+          </p>
+        </form>
+        <template #footer>
+          <UiButton
+            variant="secondary"
+            :disabled="saving"
+            @click="editOpen = false"
+          >
+            Batal
+          </UiButton>
+          <UiButton
+            type="submit"
+            form="manmonth-row-form"
+            :loading="saving"
+          >
+            Simpan
+          </UiButton>
+        </template>
+      </UiModal>
     </template>
   </div>
 </template>
@@ -417,16 +695,65 @@ meter::-webkit-meter-bar {
 meter::-webkit-meter-optimum-value {
   background: var(--color-secondary);
 }
-.csv-preview-cell {
-  display: block;
-  min-width: 260px;
-  max-width: 520px;
+.clamp-cell {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  min-width: 160px;
+  max-width: 300px;
+}
+.clamp-cell > span {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.clamped {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.view-more {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.view-more:hover {
+  text-decoration: underline;
+}
+.detail-body {
+  display: grid;
+  gap: 6px;
+  max-height: 60vh;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+.detail-body a {
+  color: var(--color-primary);
+}
+.edit-row-form {
+  display: grid;
+  gap: 14px;
+  max-height: 62vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.edit-row-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
 }
 @media (max-width: 767px) {
   .metric-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .edit-row-pair {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (max-width: 520px) {

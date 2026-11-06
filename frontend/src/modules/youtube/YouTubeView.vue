@@ -1,28 +1,27 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, useId } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { apiBase, errorMessage } from '../../shared/api'
 import { useToast } from '../../shared/composables/useToast'
 import UiBreadcrumbs from '../../shared/components/ui/UiBreadcrumbs.vue'
 import UiButton from '../../shared/components/ui/UiButton.vue'
 import UiCard from '../../shared/components/ui/UiCard.vue'
+import UiConfirmDialog from '../../shared/components/ui/UiConfirmDialog.vue'
+import UiModal from '../../shared/components/ui/UiModal.vue'
 import UiErrorState from '../../shared/components/ui/UiErrorState.vue'
 import UiInput from '../../shared/components/ui/UiInput.vue'
 import UiSelect from '../../shared/components/ui/UiSelect.vue'
 import UiSkeleton from '../../shared/components/ui/UiSkeleton.vue'
 import UiTextarea from '../../shared/components/ui/UiTextarea.vue'
-import { youtubeApi, type YouTubeStatus, type YouTubeVideo } from './api'
+import { youtubeApi, type PrivacyStatus, type YouTubeStatus, type YouTubeVideo } from './api'
 
 const route = useRoute()
 const { notify } = useToast()
 const status = ref<YouTubeStatus>()
 const videos = ref<YouTubeVideo[]>([])
-const nextToken = ref<string | null>(null)
-const pageTokens = ref<(string | undefined)[]>([undefined])
-const pageIndex = ref(0)
+const truncated = ref(false)
 const title = ref('')
 const description = ref('')
-const tags = ref('')
 const privacy = ref('private')
 const file = ref<File>()
 const fileInput = ref<HTMLInputElement>()
@@ -37,22 +36,153 @@ const error = ref('')
 const fileError = ref('')
 const connected = computed(() => status.value?.connected ?? false)
 const canConnect = computed(() => status.value?.can_connect ?? false)
-const connectionExpired = computed(() =>
-  error.value.startsWith('Koneksi YouTube kedaluwarsa.'),
-)
+const needsReconnect = (message: string): boolean => message.includes('menghubungkan ulang')
+const connectionExpired = computed(() => needsReconnect(error.value))
 const maxVideoBytes = 512 * 1024 * 1024
+
+const privacyOptions = [
+  { value: 'private', label: 'Private' },
+  { value: 'unlisted', label: 'Unlisted' },
+  { value: 'public', label: 'Public' },
+]
+const TICKET_PREFIXES = ['OGTSK', 'RATSK', 'AMTSK', 'TLTSK'] as const
+const PAGE_SIZE = 10
+const search = ref('')
+const ticketFilter = ref('')
+const privacyFilter = ref('')
+const page = ref(1)
+
+function videoText(video: YouTubeVideo): string {
+  return `${video.title}\n${video.description}`
+}
+function hasTicket(video: YouTubeVideo, prefix: string): boolean {
+  return new RegExp(`\\b${prefix}`, 'i').test(videoText(video))
+}
+const ticketOptions = computed(() => [
+  { value: '', label: `Semua tiket (${videos.value.length})` },
+  ...TICKET_PREFIXES.map((prefix) => ({
+    value: prefix,
+    label: `${prefix} (${videos.value.filter((video) => hasTicket(video, prefix)).length})`,
+  })),
+])
+const filteredVideos = computed(() => {
+  const terms = search.value.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  return videos.value.filter((video) => {
+    if (ticketFilter.value && !hasTicket(video, ticketFilter.value)) return false
+    if (privacyFilter.value && video.privacy_status !== privacyFilter.value) return false
+    const text = videoText(video).toLowerCase()
+    return terms.every((term) => text.includes(term))
+  })
+})
+const hasFilters = computed(() => !!(search.value.trim() || ticketFilter.value || privacyFilter.value))
+const totalPages = computed(() => Math.max(1, Math.ceil(filteredVideos.value.length / PAGE_SIZE)))
+const pagedVideos = computed(() =>
+  filteredVideos.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE),
+)
+const pageNumbers = computed<(number | '…')[]>(() => {
+  const total = totalPages.value
+  const current = page.value
+  const pages = [...new Set([1, current - 1, current, current + 1, total])]
+    .filter((value) => value >= 1 && value <= total)
+    .sort((a, b) => a - b)
+  return pages.flatMap((value, index) =>
+    index && value - pages[index - 1]! > 1 ? (['…', value] as const) : [value],
+  )
+})
+watch([search, ticketFilter, privacyFilter], () => {
+  page.value = 1
+})
+watch(totalPages, (value) => {
+  page.value = Math.min(page.value, value)
+})
+function resetFilters(): void {
+  search.value = ''
+  ticketFilter.value = ''
+  privacyFilter.value = ''
+}
+
+const editTarget = ref<YouTubeVideo>()
+const editOpen = ref(false)
+const editTitle = ref('')
+const editDescription = ref('')
+const editPrivacy = ref<string>('private')
+const saving = ref(false)
+const editError = ref('')
+const deleteTarget = ref<YouTubeVideo>()
+const deleteOpen = ref(false)
+const deleting = ref(false)
+const deleteError = ref('')
+
+function openEdit(video: YouTubeVideo): void {
+  editTarget.value = video
+  editTitle.value = video.title
+  editDescription.value = video.description
+  editPrivacy.value = ['private', 'unlisted', 'public'].includes(video.privacy_status)
+    ? video.privacy_status
+    : 'private'
+  editError.value = ''
+  editOpen.value = true
+}
+
+async function saveEdit(): Promise<void> {
+  const target = editTarget.value
+  if (!target || saving.value || !editTitle.value.trim()) return
+  saving.value = true
+  editError.value = ''
+  try {
+    const updated = await youtubeApi.update(target.video_id, {
+      title: editTitle.value.trim(),
+      description: editDescription.value,
+      privacy_status: editPrivacy.value as PrivacyStatus,
+    })
+    videos.value = videos.value.map((video) =>
+      video.video_id === updated.video_id
+        ? { ...updated, thumbnail_url: updated.thumbnail_url ?? video.thumbnail_url }
+        : video,
+    )
+    editOpen.value = false
+    notify('Perubahan video disimpan.')
+  } catch (cause) {
+    editError.value = errorMessage(cause)
+  } finally {
+    saving.value = false
+  }
+}
+
+function askDelete(video: YouTubeVideo): void {
+  deleteTarget.value = video
+  deleteError.value = ''
+  deleteOpen.value = true
+}
+
+async function confirmDelete(): Promise<void> {
+  const target = deleteTarget.value
+  if (!target || deleting.value) return
+  deleting.value = true
+  deleteError.value = ''
+  try {
+    await youtubeApi.remove(target.video_id)
+    videos.value = videos.value.filter((video) => video.video_id !== target.video_id)
+    deleteOpen.value = false
+    notify('Video dihapus dari channel.')
+  } catch (cause) {
+    deleteError.value = errorMessage(cause)
+  } finally {
+    deleting.value = false
+  }
+}
 
 function connect(): void {
   window.location.assign(`${apiBase}/youtube/connect`)
 }
 
-async function loadVideos(token?: string): Promise<void> {
+async function loadVideos(): Promise<void> {
   loading.value = true
   error.value = ''
   try {
-    const page = await youtubeApi.videos(token)
-    videos.value = page.videos
-    nextToken.value = page.next_page_token
+    const result = await youtubeApi.videos()
+    videos.value = result.videos
+    truncated.value = result.truncated
   } catch (cause) {
     error.value = errorMessage(cause)
   } finally {
@@ -65,7 +195,7 @@ async function load(): Promise<void> {
   error.value = ''
   try {
     status.value = await youtubeApi.status()
-    if (status.value.connected) await loadVideos(pageTokens.value[pageIndex.value])
+    if (status.value.connected) await loadVideos()
   } catch (cause) {
     error.value = errorMessage(cause)
   } finally {
@@ -145,7 +275,6 @@ async function upload(): Promise<void> {
   form.set('video', file.value)
   form.set('title', title.value)
   form.set('description', description.value)
-  form.set('tags', tags.value)
   form.set('privacy_status', privacy.value)
   try {
     const result = await youtubeApi.upload(form)
@@ -153,13 +282,11 @@ async function upload(): Promise<void> {
     notify('Video berhasil diunggah ke channel bersama.')
     title.value = ''
     description.value = ''
-    tags.value = ''
     file.value = undefined
     if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
     previewUrl.value = ''
     if (fileInput.value) fileInput.value.value = ''
-    pageTokens.value = [undefined]
-    pageIndex.value = 0
+    page.value = 1
     await loadVideos()
   } catch (cause) {
     error.value = errorMessage(cause)
@@ -178,19 +305,6 @@ async function disconnect(): Promise<void> {
   } catch (cause) {
     error.value = errorMessage(cause)
   }
-}
-
-async function nextPage(): Promise<void> {
-  if (!nextToken.value) return
-  pageTokens.value = [...pageTokens.value.slice(0, pageIndex.value + 1), nextToken.value]
-  pageIndex.value += 1
-  await loadVideos(nextToken.value)
-}
-
-async function previousPage(): Promise<void> {
-  if (pageIndex.value === 0) return
-  pageIndex.value -= 1
-  await loadVideos(pageTokens.value[pageIndex.value])
 }
 
 function dateLabel(value: string | null): string {
@@ -248,16 +362,7 @@ onMounted(async () => {
           <form class="upload-form" @submit.prevent="upload">
             <UiInput v-model="title" class="title-input" label="Judul video" required maxlength="100" />
             <UiTextarea v-model="description" label="Deskripsi" :rows="4" maxlength="5000" />
-            <UiInput v-model="tags" label="Tag" hint="Pisahkan dengan koma" maxlength="1000" />
-            <UiSelect
-              v-model="privacy"
-              label="Privasi video"
-              :options="[
-                { value: 'private', label: 'Private' },
-                { value: 'unlisted', label: 'Unlisted' },
-                { value: 'public', label: 'Public' },
-              ]"
-            />
+            <UiSelect v-model="privacy" label="Privasi video" :options="privacyOptions" />
             <label
               :id="fileInputId + '-dropzone'"
               class="file-drop-zone"
@@ -306,27 +411,80 @@ onMounted(async () => {
       </UiCard>
       <section class="content-section">
         <div class="section-heading">
-          <div><h2>Konten channel</h2><p>Video terbaru dari channel YouTube bersama.</p></div>
-          <UiButton variant="secondary" :loading="loading" @click="loadVideos(pageTokens[pageIndex])">Muat ulang</UiButton>
+          <div><h2>Konten channel</h2><p>Video dari channel YouTube bersama.</p></div>
+          <UiButton variant="secondary" :loading="loading" @click="loadVideos">Muat ulang</UiButton>
         </div>
+        <form class="video-filters" role="search" @submit.prevent>
+          <UiInput v-model="search" class="filter-search" label="Cari video" type="search" placeholder="Judul, deskripsi, atau kode tiket" />
+          <UiSelect v-model="ticketFilter" label="Tiket" :options="ticketOptions" />
+          <UiSelect v-model="privacyFilter" label="Privasi" :options="[{ value: '', label: 'Semua privasi' }, ...privacyOptions]" />
+          <UiButton v-if="hasFilters" variant="ghost" @click="resetFilters">Reset filter</UiButton>
+        </form>
+        <p v-if="truncated" class="small muted">Hanya 1000 video terbaru yang dimuat.</p>
         <UiSkeleton v-if="loading" :lines="3" />
         <UiCard v-else-if="!error && !videos.length" padding="md"><p>Belum ada video di channel ini.</p></UiCard>
-        <div v-else class="video-list">
-          <UiCard v-for="video in videos" :key="video.video_id" padding="md" class="video-row">
-            <img v-if="video.thumbnail_url" :src="video.thumbnail_url" :alt="`Thumbnail ${video.title}`" />
-            <div class="video-copy">
-              <a :href="`https://youtu.be/${video.video_id}`" target="_blank" rel="noopener noreferrer"><strong>{{ video.title }}</strong></a>
-              <span class="small muted">{{ dateLabel(video.published_at) }} · {{ video.privacy_status }}</span>
-              <p>{{ video.description || 'Tanpa deskripsi.' }}</p>
-            </div>
-          </UiCard>
-        </div>
-        <div v-if="videos.length" class="pagination">
-          <UiButton variant="ghost" :disabled="pageIndex === 0 || loading" @click="previousPage">Sebelumnya</UiButton>
-          <span class="small muted">Halaman {{ pageIndex + 1 }}</span>
-          <UiButton variant="ghost" :disabled="!nextToken || loading" @click="nextPage">Berikutnya</UiButton>
-        </div>
+        <UiCard v-else-if="!error && !filteredVideos.length" padding="md">
+          <p>Tidak ada video yang cocok dengan filter.</p>
+        </UiCard>
+        <template v-else>
+          <p class="small muted result-count" aria-live="polite">
+            Menampilkan {{ (page - 1) * PAGE_SIZE + 1 }}–{{ Math.min(page * PAGE_SIZE, filteredVideos.length) }}
+            dari {{ filteredVideos.length }} video<template v-if="hasFilters"> (total {{ videos.length }})</template>
+          </p>
+          <div class="video-list">
+            <UiCard v-for="video in pagedVideos" :key="video.video_id" padding="md" class="video-row">
+              <img v-if="video.thumbnail_url" :src="video.thumbnail_url" :alt="`Thumbnail ${video.title}`" />
+              <div class="video-copy">
+                <a :href="`https://youtu.be/${video.video_id}`" target="_blank" rel="noopener noreferrer"><strong>{{ video.title }}</strong></a>
+                <span class="small muted">{{ dateLabel(video.published_at) }} · {{ video.privacy_status }}</span>
+                <p>{{ video.description || 'Tanpa deskripsi.' }}</p>
+              </div>
+              <div class="video-actions">
+                <UiButton size="sm" variant="secondary" @click="openEdit(video)">Edit</UiButton>
+                <UiButton size="sm" variant="danger" @click="askDelete(video)">Hapus</UiButton>
+              </div>
+            </UiCard>
+          </div>
+          <nav v-if="totalPages > 1" class="pagination" aria-label="Halaman video">
+            <UiButton variant="ghost" size="sm" :disabled="page === 1" @click="page--">Sebelumnya</UiButton>
+            <template v-for="(item, index) in pageNumbers" :key="`${item}-${index}`">
+              <span v-if="item === '…'" class="small muted">…</span>
+              <UiButton
+                v-else
+                size="sm"
+                :variant="item === page ? 'primary' : 'ghost'"
+                :aria-current="item === page ? 'page' : undefined"
+                @click="page = item"
+              >
+                {{ item }}
+              </UiButton>
+            </template>
+            <UiButton variant="ghost" size="sm" :disabled="page === totalPages" @click="page++">Berikutnya</UiButton>
+          </nav>
+        </template>
       </section>
+      <UiModal v-model="editOpen" title="Edit video" size="lg" :dismissible="!saving">
+        <form id="edit-video-form" class="upload-form" @submit.prevent="saveEdit">
+          <UiInput v-model="editTitle" label="Judul video" required maxlength="100" />
+          <UiTextarea v-model="editDescription" label="Deskripsi" :rows="6" maxlength="5000" />
+          <UiSelect v-model="editPrivacy" label="Privasi video" :options="privacyOptions" />
+          <p v-if="editError" class="file-error" role="alert">{{ editError }}</p>
+          <UiButton v-if="needsReconnect(editError) && canConnect" variant="secondary" @click="connect">Hubungkan ulang channel</UiButton>
+        </form>
+        <template #footer>
+          <UiButton variant="secondary" :disabled="saving" @click="editOpen = false">Batal</UiButton>
+          <UiButton type="submit" form="edit-video-form" :loading="saving" :disabled="!editTitle.trim()">Simpan perubahan</UiButton>
+        </template>
+      </UiModal>
+      <UiConfirmDialog
+        v-model="deleteOpen"
+        title="Hapus video?"
+        :description="`Video “${deleteTarget?.title ?? ''}” akan dihapus permanen dari YouTube dan tidak dapat dikembalikan.`"
+        confirm-label="Hapus video"
+        :busy="deleting"
+        :error="deleteError"
+        @confirm="confirmDelete"
+      />
     </template>
   </template>
 </template>
@@ -355,12 +513,15 @@ onMounted(async () => {
 .preview-copy { display:grid; gap:6px; margin-top:12px; }
 .preview-copy p { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; color:var(--color-text-muted); font-size:13px; }
 .video-list { display:grid; gap:12px; }
-.video-row { display:grid; grid-template-columns:200px minmax(0,1fr); gap:16px; }
+.video-row { display:grid; grid-template-columns:200px minmax(0,1fr) auto; gap:16px; }
+.video-actions { display:flex; flex-direction:column; gap:8px; align-items:stretch; }
+.video-filters { display:grid; grid-template-columns:minmax(220px,2fr) minmax(160px,1fr) minmax(140px,1fr) auto; align-items:end; gap:12px; margin:16px 0; }
+.result-count { margin:0 0 12px; }
 .video-row img { width:100%; aspect-ratio:16/9; object-fit:cover; border-radius:var(--radius-control); }
 .video-copy { display:grid; gap:7px; min-width:0; }
 .video-copy a { color:var(--color-primary); }
 .video-copy p { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; font-size:14px; }
-.pagination { justify-content:flex-end; margin-top:16px; }
+.pagination { justify-content:flex-end; flex-wrap:wrap; gap:6px; margin-top:16px; }
 .upload-success { color:var(--color-success); }
-@media(max-width:760px) { .upload-layout,.video-row { grid-template-columns:minmax(0,1fr); } .connection-card { align-items:flex-start; flex-direction:column; } }
+@media(max-width:760px) { .upload-layout,.video-row,.video-filters { grid-template-columns:minmax(0,1fr); } .video-actions { flex-direction:row; } .connection-card { align-items:flex-start; flex-direction:column; } }
 </style>
